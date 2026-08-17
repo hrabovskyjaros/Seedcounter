@@ -1,0 +1,1462 @@
+<title>Počítadlo zrn HTZ</title>
+
+<style>
+:root{
+  --ground:#F7F8F6;
+  --panel:#FFFFFF;
+  --panel-2:#EDF1EE;
+  --ink:#16201B;
+  --muted:#5C6A63;
+  --line:#D8DFDA;
+  --line-strong:#BCC7C1;
+  --accent:#1F6F5C;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#E4F0EC;
+  --signal:#9A5D0B;
+  --signal-soft:#FBEEDA;
+  --danger:#A8261E;
+  --danger-soft:#FBE7E5;
+  --shadow:0 1px 2px rgba(22,32,27,.07), 0 10px 26px rgba(22,32,27,.06);
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#111614;
+    --panel:#1A211D;
+    --panel-2:#232B27;
+    --ink:#E7EDE9;
+    --muted:#9AA8A1;
+    --line:#2E3833;
+    --line-strong:#425049;
+    --accent:#4FBF9F;
+    --accent-ink:#07160F;
+    --accent-soft:#1B2E28;
+    --signal:#E7A93C;
+    --signal-soft:#2E2618;
+    --danger:#FF8A7E;
+    --danger-soft:#33201E;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#111614;
+  --panel:#1A211D;
+  --panel-2:#232B27;
+  --ink:#E7EDE9;
+  --muted:#9AA8A1;
+  --line:#2E3833;
+  --line-strong:#425049;
+  --accent:#4FBF9F;
+  --accent-ink:#07160F;
+  --accent-soft:#1B2E28;
+  --signal:#E7A93C;
+  --signal-soft:#2E2618;
+  --danger:#FF8A7E;
+  --danger-soft:#33201E;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box;}
+
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size:16px;
+  line-height:1.45;
+  -webkit-text-size-adjust:100%;
+}
+
+.wrap{
+  max-width:560px;
+  margin:0 auto;
+  padding:0 16px 40px;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
+/* ---------- masthead ---------- */
+.masthead{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:12px;
+  padding:18px 0 0;
+}
+.masthead h1{
+  margin:0;
+  font-size:19px;
+  font-weight:650;
+  letter-spacing:-.01em;
+}
+.masthead .sub{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+/* scale-tick divider — the rhythm of a weighing scale */
+.ticks{
+  height:9px;
+  background-image:repeating-linear-gradient(to right,
+    var(--line-strong) 0 1px, transparent 1px 9px);
+  background-repeat:repeat-x;
+  background-position:left bottom;
+  background-size:auto 5px;
+  border-bottom:1px solid var(--line);
+  opacity:.85;
+}
+
+/* ---------- panels ---------- */
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.label{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+/* ---------- readout ---------- */
+.readout{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+}
+.readout .cell{
+  background:var(--panel);
+  padding:14px 16px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.readout .num{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:34px;
+  font-weight:600;
+  letter-spacing:-.02em;
+  line-height:1.05;
+}
+.readout .num.pending{color:var(--muted); font-weight:400;}
+.readout .unit{
+  font-size:13px;
+  color:var(--muted);
+  font-family:ui-sans-serif, system-ui, sans-serif;
+  font-weight:400;
+  letter-spacing:0;
+}
+.readout .cell.htz .num{color:var(--accent);}
+
+/* ---------- buttons ---------- */
+.btn{
+  appearance:none;
+  -webkit-appearance:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  width:100%;
+  min-height:56px;
+  padding:0 18px;
+  border-radius:12px;
+  border:1px solid transparent;
+  background:var(--accent);
+  color:var(--accent-ink);
+  font:inherit;
+  font-size:17px;
+  font-weight:600;
+  cursor:pointer;
+  text-align:center;
+  user-select:none;
+}
+.btn:active{transform:translateY(1px);}
+.btn.secondary{
+  background:var(--panel);
+  color:var(--ink);
+  border-color:var(--line-strong);
+  font-weight:500;
+  font-size:16px;
+  min-height:48px;
+}
+.btn.ghost{
+  background:transparent;
+  color:var(--muted);
+  border-color:transparent;
+  min-height:44px;
+  font-size:15px;
+  font-weight:500;
+}
+.btn.danger{
+  background:transparent;
+  color:var(--danger);
+  border-color:var(--line-strong);
+  min-height:48px;
+  font-size:16px;
+  font-weight:500;
+}
+.btn[disabled]{opacity:.45; cursor:default;}
+.btn.off{opacity:.4; pointer-events:none;}
+.btn-row{display:flex; gap:10px;}
+.btn-row .btn{flex:1;}
+
+label.btn{cursor:pointer;}
+input[type=file]{
+  position:absolute;
+  width:1px; height:1px;
+  opacity:0;
+  overflow:hidden;
+}
+input[type=file]:focus-visible + span{text-decoration:underline;}
+
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+/* ---------- inputs ---------- */
+.field{display:flex; flex-direction:column; gap:6px;}
+.field input[type=text]{
+  width:100%;
+  min-height:52px;
+  padding:0 14px;
+  border:1px solid var(--line-strong);
+  border-radius:11px;
+  background:var(--panel-2);
+  color:var(--ink);
+  font:inherit;
+  font-size:18px;
+}
+.field input.num-in{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:22px;
+}
+.field input::placeholder{color:var(--muted); opacity:.7;}
+
+/* ---------- image ---------- */
+.shot{
+  border:1px solid var(--line);
+  border-radius:12px;
+  overflow:auto;
+  background:var(--panel-2);
+  -webkit-overflow-scrolling:touch;
+}
+.shot canvas{
+  display:block;
+  width:100%;
+  max-width:100%;
+  height:auto;
+}
+.shot.zoom canvas{width:220%; max-width:none;}
+
+.hint{
+  font-size:14px;
+  color:var(--muted);
+  margin:0;
+}
+.hint strong{color:var(--ink); font-weight:600;}
+
+.note{
+  border-left:3px solid var(--signal);
+  background:var(--signal-soft);
+  color:var(--ink);
+  padding:10px 12px;
+  border-radius:0 8px 8px 0;
+  font-size:14px;
+}
+.note.bad{border-left-color:var(--danger); background:var(--danger-soft);}
+.note.info{border-left-color:var(--accent); background:var(--accent-soft);}
+.note b{font-weight:650;}
+
+/* ---------- crop chooser ---------- */
+.crops{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+.crop{
+  appearance:none; -webkit-appearance:none;
+  min-height:50px;
+  padding:0 6px;
+  border-radius:11px;
+  border:1px solid var(--line-strong);
+  background:var(--panel-2);
+  color:var(--ink);
+  font:inherit;
+  font-size:15px;
+  font-weight:500;
+  cursor:pointer;
+}
+.crop[aria-pressed="true"]{
+  background:var(--accent);
+  color:var(--accent-ink);
+  border-color:var(--accent);
+  font-weight:650;
+}
+.note ul{margin:6px 0 0; padding-left:18px;}
+.note li{margin:2px 0;}
+
+/* ---------- history ---------- */
+.rows{display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+.row{
+  background:var(--panel);
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  align-items:center;
+  gap:12px;
+  padding:11px 12px 11px 14px;
+}
+.row .who{display:flex; flex-direction:column; gap:2px; min-width:0;}
+.row .who b{font-weight:600; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.row .who span{font-size:12px; color:var(--muted); font-family:ui-monospace, Menlo, Consolas, monospace; font-variant-numeric:tabular-nums;}
+.row .val{
+  font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:19px;
+  font-weight:600;
+  color:var(--accent);
+}
+.row .kill{
+  appearance:none; -webkit-appearance:none;
+  width:34px; height:34px;
+  border-radius:9px;
+  border:1px solid var(--line);
+  background:transparent;
+  color:var(--muted);
+  font-size:17px;
+  line-height:1;
+  cursor:pointer;
+}
+.empty{
+  padding:22px 14px;
+  text-align:center;
+  color:var(--muted);
+  font-size:15px;
+  border:1px dashed var(--line-strong);
+  border-radius:12px;
+}
+
+/* ---------- steps ---------- */
+.steps{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:11px;}
+.steps li{display:grid; grid-template-columns:26px 1fr; gap:11px; align-items:start; font-size:15px;}
+.steps .n{
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+  font-size:12px;
+  font-weight:600;
+  color:var(--accent);
+  background:var(--accent-soft);
+  border-radius:7px;
+  height:26px;
+  display:flex; align-items:center; justify-content:center;
+  font-variant-numeric:tabular-nums;
+}
+
+.spinner{
+  width:22px; height:22px;
+  border:2.5px solid var(--line-strong);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion: reduce){
+  .spinner{animation-duration:2.4s;}
+  .btn:active{transform:none;}
+}
+.busy{display:flex; align-items:center; gap:12px; justify-content:center; padding:26px 0; color:var(--muted); font-size:15px;}
+
+.formula{
+  font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size:14px;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:9px;
+  padding:11px 12px;
+  color:var(--ink);
+  overflow-x:auto;
+  white-space:nowrap;
+}
+
+.legend{display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); align-items:center;}
+.legend i{width:11px; height:11px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px;}
+
+textarea.dump{
+  width:100%;
+  min-height:120px;
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+  font-size:13px;
+  border:1px solid var(--line-strong);
+  border-radius:10px;
+  background:var(--panel-2);
+  color:var(--ink);
+  padding:10px;
+}
+
+.hide{display:none !important;}
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>Počítadlo zrn</h1>
+    <div class="sub">HTZ</div>
+  </header>
+  <div class="ticks"></div>
+
+  <!-- ══════════ ÚVOD ══════════ -->
+  <section id="s-home">
+    <div class="card">
+      <div class="label">Plodina</div>
+      <div class="crops" id="crops"></div>
+      <div class="note info" id="crop-tip"></div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="label">Postup</div>
+      <ol class="steps">
+        <li><span class="n">1</span><span>Navaž vzorek na váze a <strong>zapiš si hmotnost</strong>.</span></li>
+        <li><span class="n">2</span><span>Rozprostři zrna na podklad tak, aby se <strong>nedotýkala</strong>.</span></li>
+        <li><span class="n">3</span><span>Vyfoť kolmo shora — appka zrna spočítá a dopočítá HTZ.</span></li>
+      </ol>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="field">
+        <label class="label" for="in-weight">1 · Hmotnost navážky (g)</label>
+        <input type="text" id="in-weight" class="num-in" inputmode="decimal" placeholder="např. 10,24" autocomplete="off">
+      </div>
+      <p class="hint" id="weight-hint">Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.</p>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="label">2 · Fotka vzorku</div>
+    <div style="height:8px"></div>
+
+    <label class="btn off" id="lbl-cam">
+      <input type="file" id="in-cam" accept="image/*" capture="environment" disabled>
+      <span>📷 Vyfotit vzorek</span>
+    </label>
+
+    <div style="height:10px"></div>
+
+    <label class="btn secondary off" id="lbl-gal">
+      <input type="file" id="in-gal" accept="image/*" disabled>
+      <span>Vybrat fotku z galerie</span>
+    </label>
+
+    <div style="height:18px"></div>
+
+    <div id="home-recent"></div>
+
+    <div style="height:8px"></div>
+    <button class="btn ghost" id="go-help">Jak správně vyfotit vzorek</button>
+  </section>
+
+  <!-- ══════════ ZPRACOVÁNÍ ══════════ -->
+  <section id="s-busy" class="hide">
+    <div class="card">
+      <div class="busy"><div class="spinner"></div><span>Počítám zrna… může to trvat i 10 sekund</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════ VÝSLEDEK ══════════ -->
+  <section id="s-result" class="hide">
+
+    <div class="readout">
+      <div class="cell">
+        <div class="label">Zrn na fotce</div>
+        <div class="num" id="out-count">0</div>
+      </div>
+      <div class="cell htz">
+        <div class="label">HTZ</div>
+        <div class="num pending" id="out-htz">— <span class="unit">g</span></div>
+      </div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div id="warnings"></div>
+
+    <div class="shot" id="shot"><canvas id="cv"></canvas></div>
+
+    <div style="height:8px"></div>
+    <div class="legend">
+      <span><i style="background:#22D3EE"></i>volné zrno</span>
+      <span><i style="background:#F59E0B"></i>rozdělený slepenec</span>
+      <span><i style="background:#F0338D"></i>ruční oprava</span>
+    </div>
+
+    <div style="height:10px"></div>
+    <p class="hint">Něco nesedí? <strong>Klepni na zrno navíc</strong> a zmizí, <strong>klepni na nespočítané zrno</strong> a přibude.</p>
+
+    <div style="height:10px"></div>
+    <div class="btn-row">
+      <button class="btn secondary" id="btn-zoom">Přiblížit</button>
+      <button class="btn secondary" id="btn-undo">Vrátit opravu</button>
+    </div>
+
+    <div style="height:18px"></div>
+
+    <div class="card">
+      <div class="field">
+        <label class="label" for="in-weight-fix">Hmotnost navážky (g)</label>
+        <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" placeholder="např. 10,24" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="in-name">Označení vzorku (nepovinné)</label>
+        <input type="text" id="in-name" placeholder="např. vzorek 3" autocomplete="off">
+      </div>
+    </div>
+
+    <div id="htz-check"></div>
+
+    <div style="height:16px"></div>
+    <button class="btn" id="btn-save">Uložit měření</button>
+    <div style="height:10px"></div>
+    <button class="btn ghost" id="btn-cancel">Zahodit a začít znovu</button>
+  </section>
+
+  <!-- ══════════ VÝSLEDKY ══════════ -->
+  <section id="s-list" class="hide">
+    <div class="label">Uložená měření</div>
+    <div style="height:10px"></div>
+    <div id="list-rows"></div>
+    <div style="height:16px"></div>
+    <button class="btn secondary" id="btn-copy">Zkopírovat všechna měření</button>
+    <div style="height:10px"></div>
+    <textarea class="dump hide" id="dump" readonly></textarea>
+    <div style="height:10px"></div>
+    <button class="btn danger" id="btn-clear">Vymazat všechna měření</button>
+    <div style="height:14px"></div>
+    <button class="btn ghost" id="list-back">Zpět</button>
+  </section>
+
+  <!-- ══════════ NÁPOVĚDA ══════════ -->
+  <section id="s-help" class="hide">
+    <div class="card">
+      <div class="label">Jak vyfotit vzorek</div>
+      <ul class="steps" style="list-style:none">
+        <li><span class="n">✓</span><span><strong>Zrna od sebe.</strong> Dotýkající se zrna appka pozná jako slepenec a jejich počet už jen odhaduje. Rozhrnout je je vždycky lepší než spoléhat na odhad.</span></li>
+        <li><span class="n">✓</span><span><strong>Jen dno misky v záběru.</strong> Fotíš kolmo shora a zblízka, ať zrna vyplní snímek. Stěny misky a jejich stín do záběru nepatří.</span></li>
+        <li><span class="n">✓</span><span><strong>Celý vzorek najednou.</strong> Nic nesmí zůstat mimo záběr ani ležet přes okraj fotky — chybějící zrno posune HTZ nahoru.</span></li>
+        <li><span class="n">✓</span><span><strong>Rozptýlené světlo.</strong> Ostré stíny a odlesky matou rozpoznávání. Nejlepší je stín nebo zataženo.</span></li>
+        <li><span class="n">✓</span><span><strong>Čistá miska.</strong> Plevy, prach a úlomky se dají spočítat jako zrna. Misku předem vytři.</span></li>
+      </ul>
+      <p class="hint">Bledě modrá miska funguje pro <strong>všechny plodiny</strong> — appka nehledá tmavé skvrny, ale barvu odlišnou od misky. Proto se stejně dobře najde jantarová pšenice i černá řepka.</p>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="label">Jak se HTZ počítá</div>
+      <div class="formula">HTZ = hmotnost vzorku ÷ počet zrn × 1000</div>
+      <p class="hint">Proto na přesnosti počtu záleží: <strong>chyba 1 % v počtu zrn je chyba 1 % v HTZ</strong>. Než měření uložíš, projeď fotku očima a značky doklepej.</p>
+      <p class="hint">Vzorek kolem <strong>10 g</strong> je dobrý kompromis — dost zrn na přesnost a pořád se vejdou na papír rozprostřené. Váž na dvě desetinná místa.</p>
+    </div>
+
+    <div style="height:16px"></div>
+    <button class="btn secondary" id="help-back">Zpět</button>
+  </section>
+
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════
+   Screen switching
+   ═══════════════════════════════════════════════════════════ */
+const SCREENS = ["s-home", "s-busy", "s-result", "s-list", "s-help"];
+function show(id) {
+  SCREENS.forEach(s => document.getElementById(s).classList.toggle("hide", s !== id));
+  window.scrollTo(0, 0);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Storage
+   ═══════════════════════════════════════════════════════════ */
+const KEY = "htz-pocitadlo-v1";
+let saved = [];
+try { saved = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { saved = []; }
+
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* private mode — keep going in memory */ }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Crops
+   The detector calibrates itself from each photo, so the crop never
+   drives the segmentation. What it drives is guidance and guardrails:
+   how much to weigh out (a 30x span between rape and soya), which
+   background to use, how fine the working resolution has to be for
+   2 mm seeds, and which HTZ result is physically believable.
+   ═══════════════════════════════════════════════════════════ */
+const CROPS = {
+  wheat:  { name: "Pšenice",  scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
+  barley: { name: "Ječmen",   scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
+  rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2900 },
+  soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000 },
+  maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000 },
+  other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
+};
+const CROP_KEY = "htz-pocitadlo-crop";
+let crop = localStorage.getItem(CROP_KEY) || "wheat";
+if (!CROPS[crop]) crop = "wheat";
+
+function renderCrops() {
+  const box = document.getElementById("crops");
+  box.innerHTML = "";
+  Object.keys(CROPS).forEach(k => {
+    const b = document.createElement("button");
+    b.className = "crop";
+    b.type = "button";
+    b.textContent = CROPS[k].name;
+    b.setAttribute("aria-pressed", String(k === crop));
+    b.addEventListener("click", () => {
+      crop = k;
+      try { localStorage.setItem(CROP_KEY, k); } catch (e) { /* ignore */ }
+      renderCrops();
+    });
+    box.append(b);
+  });
+  const c = CROPS[crop];
+  document.getElementById("crop-tip").innerHTML =
+    "Nasyp <b>" + c.scoop + "</b>" + (c.approx ? " (" + c.approx + ")" : "") +
+    ", <b>zvaž ji</b> a rozprostři v misce do plochy zhruba <b>" + c.area +
+    "</b>. Přesnou hmotnost trefovat nemusíš — stačí ji přesně zvážit." +
+    (c.lo > 0 ? " Čekaná HTZ <b>" + fmt1(c.lo) + "–" + fmt1(c.hi) + " g</b>." : "");
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Number helpers — Czech keyboards type a comma
+   ═══════════════════════════════════════════════════════════ */
+function parseNum(raw) {
+  const t = String(raw || "").trim().replace(",", ".");
+  if (!t) return NaN;
+  const v = parseFloat(t);
+  return isFinite(v) ? v : NaN;
+}
+const fmt1 = v => v.toFixed(1).replace(".", ",");
+const fmt2 = v => v.toFixed(2).replace(".", ",");
+
+/* ══════════════════════════════════════════════════════════════
+   Image analysis
+   ═══════════════════════════════════════════════════════════ */
+async function loadBitmap(file) {
+  try { return await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch (e) { return await createImageBitmap(file); }
+}
+
+/** Median of a numeric array (copies, so the caller's order survives). */
+function median(arr) {
+  if (!arr.length) return 0;
+  const a = Float64Array.from(arr).sort();
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+function otsu(hist, total) {
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, best = -1, thr = 0;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > best) { best = between; thr = t; }
+  }
+  return thr;
+}
+
+/** 3x3 box blur, separable, on a Uint8 map. */
+function blur3(src, w, h) {
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    for (let x = 0; x < w; x++) {
+      const a = src[r + (x > 0 ? x - 1 : 0)];
+      const b = src[r + x];
+      const c = src[r + (x < w - 1 ? x + 1 : w - 1)];
+      tmp[r + x] = (a + b + c) / 3;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    const up = (y > 0 ? y - 1 : 0) * w, mid = y * w, dn = (y < h - 1 ? y + 1 : h - 1) * w;
+    for (let x = 0; x < w; x++) out[mid + x] = (tmp[up + x] + tmp[mid + x] + tmp[dn + x]) / 3;
+  }
+  return out;
+}
+
+/** 3x3 square erosion / dilation on a binary Uint8 mask (0/1), separable. */
+function morph(mask, w, h, dilate) {
+  const pick = dilate ? Math.max : Math.min;
+  const edge = dilate ? 0 : 1;
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    for (let x = 0; x < w; x++) {
+      const a = x > 0 ? mask[r + x - 1] : edge;
+      const c = x < w - 1 ? mask[r + x + 1] : edge;
+      tmp[r + x] = pick(a, mask[r + x], c);
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    const mid = y * w;
+    const up = y > 0 ? (y - 1) * w : -1, dn = y < h - 1 ? (y + 1) * w : -1;
+    for (let x = 0; x < w; x++) {
+      const a = up >= 0 ? tmp[up + x] : edge;
+      const c = dn >= 0 ? tmp[dn + x] : edge;
+      out[mid + x] = pick(a, tmp[mid + x], c);
+    }
+  }
+  return out;
+}
+
+/** Fill background pockets fully enclosed by foreground (specular holes inside grains). */
+function fillHoles(mask, w, h) {
+  const seen = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  let sp = 0;
+  const pushIf = i => { if (!mask[i] && !seen[i]) { seen[i] = 1; stack[sp++] = i; } };
+  for (let x = 0; x < w; x++) { pushIf(x); pushIf((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { pushIf(y * w); pushIf(y * w + w - 1); }
+  while (sp > 0) {
+    const i = stack[--sp], x = i % w, y = (i / w) | 0;
+    if (x > 0) pushIf(i - 1);
+    if (x < w - 1) pushIf(i + 1);
+    if (y > 0) pushIf(i - w);
+    if (y < h - 1) pushIf(i + w);
+  }
+  for (let i = 0; i < mask.length; i++) if (!mask[i] && !seen[i]) mask[i] = 1;
+  return mask;
+}
+
+/**
+ * Exact squared Euclidean distance transform (Felzenszwalb & Huttenlocher):
+ * for every grain pixel, how far it is from the nearest background pixel.
+ * A grain's centre is the local maximum of this surface, which is what lets two
+ * touching grains be told apart by shape instead of by area.
+ */
+function edt1d(f, n, d, v, z) {
+  let k = 0;
+  v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    while (s <= z[k]) {
+      k--;
+      s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    }
+    k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[k + 1] < q) k++;
+    const dq = q - v[k];
+    d[q] = dq * dq + f[v[k]];
+  }
+}
+
+function edt(mask, w, h) {
+  const INF = 1e12;
+  const g = new Float64Array(w * h);
+  for (let i = 0; i < g.length; i++) g[i] = mask[i] ? INF : 0;
+
+  const n = Math.max(w, h);
+  const f = new Float64Array(n), d = new Float64Array(n);
+  const v = new Int32Array(n), z = new Float64Array(n + 1);
+
+  for (let x = 0; x < w; x++) {                       // columns
+    for (let y = 0; y < h; y++) f[y] = g[y * w + x];
+    edt1d(f, h, d, v, z);
+    for (let y = 0; y < h; y++) g[y * w + x] = d[y];
+  }
+  for (let y = 0; y < h; y++) {                       // rows
+    const r = y * w;
+    for (let x = 0; x < w; x++) f[x] = g[r + x];
+    edt1d(f, w, d, v, z);
+    for (let x = 0; x < w; x++) g[r + x] = d[x];
+  }
+
+  const out = new Float32Array(w * h);
+  for (let i = 0; i < out.length; i++) out[i] = Math.sqrt(g[i]);
+  return out;
+}
+
+/** 3x3 box blur on a float map, repeated. Flattens the ridge that runs along an
+ *  elongated grain into a single maximum, so one grain yields one peak. */
+function blurF(src, w, h, times) {
+  let cur = src;
+  for (let t = 0; t < times; t++) {
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const r = y * w;
+      for (let x = 0; x < w; x++) {
+        tmp[r + x] = (cur[r + (x > 0 ? x - 1 : 0)] + cur[r + x] + cur[r + (x < w - 1 ? x + 1 : w - 1)]) / 3;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      const up = (y > 0 ? y - 1 : 0) * w, mid = y * w, dn = (y < h - 1 ? y + 1 : h - 1) * w;
+      for (let x = 0; x < w; x++) out[mid + x] = (tmp[up + x] + tmp[mid + x] + tmp[dn + x]) / 3;
+    }
+    cur = out;
+  }
+  return cur;
+}
+
+/** 8-connected component labelling. Returns per-blob area / centroid / bbox. */
+function components(mask, w, h) {
+  const label = new Int32Array(w * h).fill(-1);
+  const stack = new Int32Array(w * h);
+  const blobs = [];
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || label[start] !== -1) continue;
+    const id = blobs.length;
+    let sp = 0;
+    stack[sp++] = start;
+    label[start] = id;
+    let area = 0, sx = 0, sy = 0;
+    let x0 = w, y0 = h, x1 = 0, y1 = 0;
+    while (sp > 0) {
+      const i = stack[--sp], x = i % w, y = (i / w) | 0;
+      area++; sx += x; sy += y;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= w) continue;
+          const j = ny * w + nx;
+          if (mask[j] && label[j] === -1) { label[j] = id; stack[sp++] = j; }
+        }
+      }
+    }
+    blobs.push({ id, area, cx: sx / area, cy: sy / area, x0, y0, x1, y1,
+                 border: x0 === 0 || y0 === 0 || x1 === w - 1 || y1 === h - 1 });
+  }
+  return { blobs, label };
+}
+
+/**
+ * Local background colour, as a coarse grid of tile medians.
+ *
+ * A single background colour for the whole frame cannot describe a 3 cm deep
+ * tray: the wall throws a shadow, so the floor near an edge is a different
+ * colour from the floor in the middle. Grains sitting in that shadow then merge
+ * with it into one shape and get discarded along with it — measured at -6 % on
+ * the count. Each tile is much larger than a grain and grains cover a minority
+ * of it, so the tile median is the tray floor right there, shadow included.
+ */
+function backgroundField(px, w, h) {
+  const bs = Math.max(40, Math.round(Math.min(w, h) / 18));
+  const nbx = Math.ceil(w / bs), nby = Math.ceil(h / bs);
+  const R = new Float32Array(nbx * nby), G = new Float32Array(nbx * nby), B = new Float32Array(nbx * nby);
+  const hr = new Uint32Array(256), hg = new Uint32Array(256), hb = new Uint32Array(256);
+
+  for (let by = 0; by < nby; by++) {
+    for (let bx = 0; bx < nbx; bx++) {
+      hr.fill(0); hg.fill(0); hb.fill(0);
+      const x1 = Math.min(w, (bx + 1) * bs), y1 = Math.min(h, (by + 1) * bs);
+      let n = 0;
+      for (let y = by * bs; y < y1; y += 2) {
+        for (let x = bx * bs; x < x1; x += 2) {
+          const i = (y * w + x) * 4;
+          hr[px[i]]++; hg[px[i + 1]]++; hb[px[i + 2]]++;
+          n++;
+        }
+      }
+      const mid = n >> 1;
+      const pick = hist => { let acc = 0; for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > mid) return v; } return 128; };
+      const k = by * nbx + bx;
+      R[k] = pick(hr); G[k] = pick(hg); B[k] = pick(hb);
+    }
+  }
+  return { bs, nbx, nby, R, G, B };
+}
+
+/**
+ * Colour distance from the local background, per pixel.
+ * The bilinear weights along x are the same on every row, so they are computed
+ * once up front and the per-pixel work collapses to multiply-adds — sampling the
+ * field through a helper call per pixel tripled the total runtime.
+ */
+function distanceField(px, f, w, h) {
+  const { bs, nbx, nby, R, G, B } = f;
+  const bx0 = new Int32Array(w), bx1 = new Int32Array(w), txw = new Float32Array(w);
+  for (let x = 0; x < w; x++) {
+    const fx = Math.min(nbx - 1, Math.max(0, x / bs - 0.5));
+    const i0 = Math.floor(fx);
+    bx0[x] = i0;
+    bx1[x] = Math.min(nbx - 1, i0 + 1);
+    txw[x] = fx - i0;
+  }
+
+  const dist = new Float32Array(w * h);
+  let maxD = 0;
+  for (let y = 0, i = 0; y < h; y++) {
+    const fy = Math.min(nby - 1, Math.max(0, y / bs - 0.5));
+    const j0 = Math.floor(fy);
+    const r0 = j0 * nbx, r1 = Math.min(nby - 1, j0 + 1) * nbx;
+    const ty = fy - j0, sy = 1 - ty;
+    for (let x = 0; x < w; x++, i++) {
+      const a = bx0[x], b = bx1[x], t = txw[x], s = 1 - t;
+      const br = (R[r0 + a] * s + R[r0 + b] * t) * sy + (R[r1 + a] * s + R[r1 + b] * t) * ty;
+      const bgc = (G[r0 + a] * s + G[r0 + b] * t) * sy + (G[r1 + a] * s + G[r1 + b] * t) * ty;
+      const bb = (B[r0 + a] * s + B[r0 + b] * t) * sy + (B[r1 + a] * s + B[r1 + b] * t) * ty;
+      const p = i * 4;
+      const dr = px[p] - br, dg = px[p + 1] - bgc, db = px[p + 2] - bb;
+      const d = Math.sqrt(dr * dr + dg * dg + db * db);
+      dist[i] = d;
+      if (d > maxD) maxD = d;
+    }
+  }
+  return { dist, maxD };
+}
+
+/**
+ * Segment grains out of a photo.
+ * Every pixel is scored by its colour distance from the background, not by
+ * brightness — that is what lets one pale blue tray work under amber wheat,
+ * yellow soya and black rape alike, where a luminance threshold would need a
+ * different background per crop.
+ * The background is sampled locally rather than as one colour for the frame, so
+ * the shadow the tray wall throws is compared against itself instead of being
+ * mistaken for grain.
+ */
+function segment(imgData, w, h) {
+  const px = imgData.data;
+
+  // --- distance-from-local-background map, normalised to its own maximum
+  const { dist, maxD } = distanceField(px, backgroundField(px, w, h), w, h);
+  if (maxD < 24) return { fail: "contrast" };
+
+  const norm = new Uint8Array(w * h);
+  const hist = new Uint32Array(256);
+  const k = 255 / maxD;
+  for (let i = 0; i < dist.length; i++) {
+    const v = Math.min(255, Math.round(dist[i] * k));
+    norm[i] = v;
+    hist[v]++;
+  }
+
+  const smooth = blur3(norm, w, h);
+  const h2 = new Uint32Array(256);
+  for (let i = 0; i < smooth.length; i++) h2[smooth[i]]++;
+  const thr = otsu(h2, smooth.length);
+
+  let mask = new Uint8Array(w * h);
+  let fg = 0;
+  for (let i = 0; i < mask.length; i++) if (smooth[i] > thr) { mask[i] = 1; fg++; }
+
+  const cover = fg / mask.length;
+  if (cover > 0.72) return { fail: "cover" };
+
+  mask = fillHoles(mask, w, h);
+  mask = morph(mask, w, h, false);   // erode — snaps thin bridges, drops specks
+  mask = morph(mask, w, h, true);    // dilate — restore grain size
+
+  const cc = components(mask, w, h);
+  let blobs = cc.blobs;
+  if (!blobs.length) return { fail: "empty" };
+
+  // --- drop dust: first pass median over anything above a floor area
+  const floor = Math.max(12, (w * h) / 90000);
+  let big = blobs.filter(b => b.area >= floor);
+  if (!big.length) return { fail: "empty" };
+  let med = median(big.map(b => b.area));
+
+  // The tray wall and the shadow it throws show up as one sprawling shape glued
+  // to the edge of the frame. Counted as a cluster it would invent hundreds of
+  // grains, so anything border-bound and vastly oversized is thrown away.
+  let rim = 0;
+  const kept = big.filter(b => {
+    if (b.area < Math.max(floor, med * 0.28)) return false;
+    if (b.border && b.area > med * 8) { rim++; return false; }
+    return true;
+  });
+  if (!kept.length) return { fail: "empty" };
+  med = median(kept.map(b => b.area));
+
+  return { blobs: kept, med, cover, rim, mask, label: cc.label, w, h };
+}
+
+/**
+ * Blobs → one mark per grain, located by peaks of the distance transform.
+ *
+ * The obvious alternative — divide the blob's area by a typical grain's area —
+ * cannot tell a single plump grain from two small ones stuck together, and real
+ * samples vary in grain size by far more than the gap between those two cases:
+ * at +-30 % size spread it invented 16 % extra grains. Peak finding asks a
+ * different question, how many separate centres the shape has, which does not
+ * care that one grain is bigger than another.
+ */
+const PEAK_MIN_FRAC = 0.52;   // a peak must be this deep inside the shape, relative to a typical grain
+const PEAK_DIST_FRAC = 0.85;  // never put two centres closer together than this
+const SADDLE_FRAC = 0.22;     // how deep the valley between two centres must be
+
+/**
+ * Do two candidate centres belong to the same grain?
+ *
+ * Distance alone cannot answer this. A wheat grain is elongated, so the ridge of
+ * the distance map running along it is long enough to hold two candidates that
+ * are far apart — separating by distance alone counted nearly every cereal grain
+ * twice (+74 %). What actually distinguishes two touching grains from one long
+ * one is a valley: at the neck where two grains meet the distance map dips,
+ * while along a single grain it never does.
+ */
+function sameGrain(dist, w, ax, ay, bx, by, drop) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
+  let low = Infinity;
+  for (let s = 0; s <= steps; s++) {
+    const x = Math.round(ax + (bx - ax) * s / steps);
+    const y = Math.round(ay + (by - ay) * s / steps);
+    const d = dist[y * w + x];
+    if (d < low) low = d;
+  }
+  const lo = Math.min(dist[ay * w + ax], dist[by * w + bx]);
+  return low > lo - drop;   // no real dip on the way across — one grain
+}
+
+function toMarks(seg) {
+  const { blobs: kept, med, label, w, h, mask } = seg;
+
+  const dist = blurF(edt(mask, w, h), w, h, 2);
+
+  // pixels grouped by blob, via counting sort on the label map
+  const maxId = kept.reduce((m, b) => Math.max(m, b.id), 0);
+  const slot = new Int32Array(maxId + 2);
+  const wanted = new Uint8Array(maxId + 1);
+  for (const b of kept) wanted[b.id] = 1;
+  for (let i = 0; i < label.length; i++) {
+    const L = label[i];
+    if (L >= 0 && wanted[L]) slot[L + 1]++;
+  }
+  for (let k = 1; k < slot.length; k++) slot[k] += slot[k - 1];
+  const starts = Int32Array.from(slot);
+  const pix = new Int32Array(slot[slot.length - 1]);
+  const cursor = Int32Array.from(slot);
+  for (let i = 0; i < label.length; i++) {
+    const L = label[i];
+    if (L >= 0 && wanted[L]) pix[cursor[L]++] = i;
+  }
+
+  // a typical grain's half-thickness, taken from blobs that are plainly single
+  const singles = kept.filter(b => b.area > med * 0.7 && b.area < med * 1.3);
+  const radii = (singles.length >= 5 ? singles : kept).map(b => {
+    let mx = 0;
+    for (let k = starts[b.id]; k < starts[b.id + 1]; k++) {
+      const d = dist[pix[k]];
+      if (d > mx) mx = d;
+    }
+    return mx;
+  });
+  const r0 = Math.max(1.5, median(radii));
+  const minPeak = r0 * PEAK_MIN_FRAC;
+  const minDist = Math.max(2, r0 * PEAK_DIST_FRAC);
+  const minDist2 = minDist * minDist;
+  const drop = Math.max(0.6, r0 * SADDLE_FRAC);
+
+  const marks = [];
+  let split = 0, border = 0;
+
+  for (const b of kept) {
+    const from = starts[b.id], to = starts[b.id + 1];
+    const cand = [];
+    for (let k = from; k < to; k++) {
+      const i = pix[k];
+      if (dist[i] >= minPeak) cand.push(i);
+    }
+    cand.sort((p, q) => dist[q] - dist[p]);
+
+    const peaks = [];
+    for (const i of cand) {
+      const x = i % w, y = (i / w) | 0;
+      let ok = true;
+      for (const p of peaks) {
+        const dx = p.x - x, dy = p.y - y;
+        if (dx * dx + dy * dy < minDist2 || sameGrain(dist, w, x, y, p.x, p.y, drop)) { ok = false; break; }
+      }
+      if (ok) peaks.push({ x, y });
+    }
+    if (!peaks.length) peaks.push({ x: b.cx, y: b.cy });   // too thin to peak — still one grain
+
+    if (peaks.length > 1) split += peaks.length;
+    if (b.border) border++;
+    for (const p of peaks) {
+      marks.push({ x: p.x, y: p.y, n: 1, kind: peaks.length > 1 ? "split" : "one" });
+    }
+  }
+
+  return { marks, clustered: split, border, capped: 0, r0 };
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Result screen state
+   ═══════════════════════════════════════════════════════════ */
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const photo = document.createElement("canvas");
+
+let marks = [];
+let grainR = 10;
+let undoStack = [];
+
+function total() { return marks.reduce((s, m) => s + m.n, 0); }
+
+function draw() {
+  ctx.drawImage(photo, 0, 0);
+  const r = Math.max(3.5, grainR * 0.34);
+  const lw = Math.max(1.6, grainR * 0.1);
+  const COLOR = { one: "#22D3EE", split: "#F59E0B", manual: "#F0338D" };
+  for (const m of marks) {
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = COLOR[m.kind] || COLOR.one;
+    ctx.fill();
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = "rgba(0,0,0,.7)";
+    ctx.stroke();
+  }
+  document.getElementById("out-count").textContent = total();
+  recalcHtz();
+}
+
+/* The weight is typed on the home screen, straight off the scale, and stays
+   correctable on the result screen — two inputs over one value. */
+const wIn = document.getElementById("in-weight");
+const wFix = document.getElementById("in-weight-fix");
+
+function weightValue() { return parseNum(wIn.value); }
+
+function setWeight(txt, from) {
+  if (from !== wIn) wIn.value = txt;
+  if (from !== wFix) wFix.value = txt;
+  const ok = isFinite(weightValue()) && weightValue() > 0;
+  document.getElementById("in-cam").disabled = !ok;
+  document.getElementById("in-gal").disabled = !ok;
+  document.getElementById("lbl-cam").classList.toggle("off", !ok);
+  document.getElementById("lbl-gal").classList.toggle("off", !ok);
+  document.getElementById("weight-hint").textContent = ok
+    ? "Hotovo — teď rozprostři vzorek v misce a vyfoť ho."
+    : "Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.";
+  recalcHtz();
+}
+
+wIn.addEventListener("input", () => setWeight(wIn.value, wIn));
+wFix.addEventListener("input", () => setWeight(wFix.value, wFix));
+
+function recalcHtz() {
+  const el = document.getElementById("out-htz");
+  const check = document.getElementById("htz-check");
+  const wgt = weightValue();
+  const n = total();
+  if (!isFinite(wgt) || wgt <= 0 || n <= 0) {
+    el.innerHTML = '— <span class="unit">g</span>';
+    el.classList.add("pending");
+    check.innerHTML = "";
+    document.getElementById("btn-save").disabled = true;
+    return null;
+  }
+  const htz = wgt / n * 1000;
+  el.innerHTML = fmt1(htz) + ' <span class="unit">g</span>';
+  el.classList.remove("pending");
+  document.getElementById("btn-save").disabled = false;
+
+  // Plausibility band per crop — catches a mistyped weight or a wild miscount
+  // long before the number reaches a protocol.
+  const c = CROPS[crop];
+  check.innerHTML = (c.lo > 0 && (htz < c.lo || htz > c.hi))
+    ? '<div style="height:14px"></div><div class="note bad"><b>' + fmt1(htz) +
+      " g neodpovídá plodině " + c.name.toLowerCase() + "</b> (obvykle " + fmt1(c.lo) + "–" +
+      fmt1(c.hi) + " g). Zkontroluj hmotnost i počet zrn, než měření uložíš.</div>"
+    : "";
+  return htz;
+}
+
+/* --- tap to correct --------------------------------------------------- */
+cv.addEventListener("click", ev => {
+  const rect = cv.getBoundingClientRect();
+  const sx = cv.width / rect.width, sy = cv.height / rect.height;
+  const x = (ev.clientX - rect.left) * sx, y = (ev.clientY - rect.top) * sy;
+  const reach = Math.max(20, grainR * 1.35);
+
+  let hit = -1, bestD = Infinity;
+  for (let i = 0; i < marks.length; i++) {
+    const d = Math.hypot(marks[i].x - x, marks[i].y - y);
+    if (d < reach && d < bestD) { bestD = d; hit = i; }
+  }
+
+  if (hit >= 0) {
+    undoStack.push({ op: "dec", i: hit, mark: Object.assign({}, marks[hit]) });
+    marks.splice(hit, 1);
+  } else {
+    marks.push({ x, y, n: 1, kind: "manual" });
+    undoStack.push({ op: "add" });
+  }
+  draw();
+});
+
+document.getElementById("btn-undo").addEventListener("click", () => {
+  const u = undoStack.pop();
+  if (!u) return;
+  if (u.op === "add") marks.pop();
+  else marks.splice(u.i, 0, u.mark);
+  draw();
+});
+
+document.getElementById("btn-zoom").addEventListener("click", ev => {
+  const box = document.getElementById("shot");
+  const on = box.classList.toggle("zoom");
+  ev.currentTarget.textContent = on ? "Zmenšit" : "Přiblížit";
+});
+
+
+/* ══════════════════════════════════════════════════════════════
+   Capture → analyse
+   ═══════════════════════════════════════════════════════════ */
+async function handleFile(file) {
+  if (!file) return;
+  show("s-busy");
+  // let the browser paint the spinner before the main thread gets busy
+  await new Promise(r => setTimeout(r, 50));
+
+  try {
+    const bmp = await loadBitmap(file);
+    const scale = Math.min(1, CROPS[crop].side / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+
+    photo.width = w; photo.height = h;
+    photo.getContext("2d").drawImage(bmp, 0, 0, w, h);
+    cv.width = w; cv.height = h;
+
+    const data = photo.getContext("2d").getImageData(0, 0, w, h);
+    const seg = segment(data, w, h);
+
+    const warn = document.getElementById("warnings");
+    warn.innerHTML = "";
+
+    if (seg.fail) {
+      const msg = {
+        contrast: "Zrna na fotce nejde odlišit od misky. Zkontroluj, že fotíš proti dnu misky a že vzorek není přesvícený.",
+        cover: "Zrna zabírají skoro celou fotku. Rozprostři je na větší plochu, ať je mezi nimi vidět miska.",
+        empty: "Na fotce nejsou žádná zrna. Zkontroluj, že je vzorek celý v záběru a ostrý."
+      }[seg.fail];
+      warn.innerHTML = '<div class="note bad">' + msg + "</div>";
+      marks = []; undoStack = []; grainR = 10;
+      ctx.drawImage(photo, 0, 0);
+      document.getElementById("out-count").textContent = "0";
+      recalcHtz();
+      show("s-result");
+      return;
+    }
+
+    const res = toMarks(seg);
+    grainR = Math.max(4, res.r0);
+    marks = res.marks;
+    undoStack = [];
+
+    const tips = [];
+    const n = total();
+    if (n > 0 && res.clustered / n > 0.3) {
+      tips.push("Velká část zrn se dotýká. Rozdělil jsem je podle tvaru, ale u hromádek je to nejisté — projeď oranžové značky očima.");
+    }
+    if (res.border > Math.max(2, marks.length * 0.08)) {
+      tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
+    }
+    if (seg.rim > 0) {
+      tips.push("V záběru je stěna misky nebo její stín — vynechal jsem je z počítání. Fotografuj kolměji shora, ať je v záběru jen dno misky.");
+    }
+    if (n < 40) {
+      tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
+    }
+    if (tips.length) {
+      warn.innerHTML = '<div class="note"><strong>Zkontroluj fotku</strong><ul><li>' +
+        tips.join("</li><li>") + "</li></ul></div>";
+    }
+
+    draw();
+    show("s-result");
+  } catch (err) {
+    document.getElementById("warnings").innerHTML =
+      '<div class="note bad">Fotku se nepodařilo načíst. Zkus ji vyfotit znovu.</div>';
+    show("s-result");
+  }
+}
+
+document.getElementById("in-cam").addEventListener("change", e => {
+  handleFile(e.target.files[0]);
+  e.target.value = "";
+});
+document.getElementById("in-gal").addEventListener("change", e => {
+  handleFile(e.target.files[0]);
+  e.target.value = "";
+});
+
+/* ══════════════════════════════════════════════════════════════
+   Save / list
+   ═══════════════════════════════════════════════════════════ */
+document.getElementById("btn-save").addEventListener("click", () => {
+  const htz = recalcHtz();
+  if (htz === null) return;
+  const wgt = weightValue();
+  const name = document.getElementById("in-name").value.trim();
+  const d = new Date();
+  saved.unshift({
+    id: Date.now(),
+    name: name || "Vzorek " + (saved.length + 1),
+    crop: CROPS[crop].name,
+    count: total(),
+    weight: wgt,
+    htz: htz,
+    when: d.toLocaleDateString("cs-CZ") + " " + d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })
+  });
+  persist();
+  setWeight("", null);
+  document.getElementById("in-name").value = "";
+  renderList();
+  renderRecent();
+  show("s-home");
+});
+
+document.getElementById("btn-cancel").addEventListener("click", () => {
+  document.getElementById("in-name").value = "";
+  show("s-home");
+});
+
+function renderList() {
+  const box = document.getElementById("list-rows");
+  box.innerHTML = "";
+  if (!saved.length) {
+    box.innerHTML = '<div class="empty">Zatím žádná uložená měření.</div>';
+    return;
+  }
+  const rows = document.createElement("div");
+  rows.className = "rows";
+  saved.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "row";
+    const who = document.createElement("div");
+    who.className = "who";
+    const b = document.createElement("b");
+    b.textContent = m.name;
+    const s = document.createElement("span");
+    s.textContent = (m.crop ? m.crop + " · " : "") + m.count + " zrn · " + fmt2(m.weight) + " g · " + m.when;
+    who.append(b, s);
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = fmt1(m.htz);
+    const kill = document.createElement("button");
+    kill.className = "kill";
+    kill.type = "button";
+    kill.textContent = "×";
+    kill.setAttribute("aria-label", "Smazat " + m.name);
+    kill.addEventListener("click", () => {
+      saved = saved.filter(x => x.id !== m.id);
+      persist(); renderList(); renderRecent();
+    });
+    row.append(who, val, kill);
+    rows.append(row);
+  });
+  box.append(rows);
+}
+
+function renderRecent() {
+  const box = document.getElementById("home-recent");
+  box.innerHTML = "";
+  if (!saved.length) return;
+  const head = document.createElement("div");
+  head.className = "label";
+  head.textContent = "Poslední měření";
+  const rows = document.createElement("div");
+  rows.className = "rows";
+  saved.slice(0, 3).forEach(m => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.gridTemplateColumns = "1fr auto";
+    const who = document.createElement("div");
+    who.className = "who";
+    const b = document.createElement("b");
+    b.textContent = m.name;
+    const s = document.createElement("span");
+    s.textContent = m.count + " zrn · " + fmt2(m.weight) + " g";
+    who.append(b, s);
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = fmt1(m.htz);
+    row.append(who, val);
+    rows.append(row);
+  });
+  const more = document.createElement("button");
+  more.className = "btn ghost";
+  more.type = "button";
+  more.textContent = "Všechna měření (" + saved.length + ")";
+  more.addEventListener("click", () => { renderList(); show("s-list"); });
+  box.append(head, document.createElement("div"), rows, more);
+  box.children[1].style.height = "8px";
+  box.style.display = "flex";
+  box.style.flexDirection = "column";
+  box.style.gap = "8px";
+}
+
+document.getElementById("btn-copy").addEventListener("click", async () => {
+  const txt = ["Vzorek\tPlodina\tZrn\tHmotnost (g)\tHTZ (g)\tČas"]
+    .concat(saved.map(m => [m.name, m.crop || "", m.count, fmt2(m.weight), fmt1(m.htz), m.when].join("\t")))
+    .join("\n");
+  const dump = document.getElementById("dump");
+  try {
+    await navigator.clipboard.writeText(txt);
+    dump.classList.add("hide");
+    const btn = document.getElementById("btn-copy");
+    btn.textContent = "Zkopírováno ✓";
+    setTimeout(() => { btn.textContent = "Zkopírovat všechna měření"; }, 1800);
+  } catch (e) {
+    // clipboard blocked — hand the text over to be selected manually
+    dump.value = txt;
+    dump.classList.remove("hide");
+    dump.focus();
+    dump.select();
+  }
+});
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  if (!saved.length) return;
+  if (!confirm("Opravdu smazat všechna uložená měření? Nejde to vrátit.")) return;
+  saved = [];
+  persist(); renderList(); renderRecent();
+});
+
+document.getElementById("list-back").addEventListener("click", () => show("s-home"));
+document.getElementById("go-help").addEventListener("click", () => show("s-help"));
+document.getElementById("help-back").addEventListener("click", () => show("s-home"));
+
+renderCrops();
+setWeight("", null);
+renderList();
+renderRecent();
+show("s-home");
+</script>
