@@ -273,20 +273,78 @@ input[type=file]:focus-visible + span{text-decoration:underline;}
 .field input::placeholder{color:var(--muted); opacity:.7;}
 
 /* ---------- image ---------- */
+/* The photo breaks out of the narrow column to the full width of the screen:
+   on a tablet the column wasted two thirds of it, and every pixel of photo is a
+   grain that is easier to check and to tap. Height is capped at the screen, so
+   the whole sample is always in view at once. */
 .shot{
-  border:1px solid var(--line);
-  border-radius:12px;
+  width:100vw;
+  margin-left:calc(50% - 50vw);
   overflow:auto;
   background:var(--panel-2);
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
   -webkit-overflow-scrolling:touch;
+  position:relative;
 }
 .shot canvas{
   display:block;
-  width:100%;
-  max-width:100%;
+  margin:0 auto;
+  width:auto;
   height:auto;
+  max-width:100%;
+  max-height:100vh;
+  max-height:100dvh;
 }
-.shot.zoom canvas{width:220%; max-width:none;}
+.shot.zoom canvas{width:220%; max-width:none; max-height:none;}
+
+/* full screen — the photo and nothing else, still tap-to-correct */
+.shot.full{
+  position:fixed;
+  inset:0;
+  z-index:50;
+  width:auto;
+  margin:0;
+  border:0;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.shot.full canvas{max-width:100%; max-height:100%;}
+.full-bar{display:none;}
+.shot.full .full-bar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  position:fixed;
+  top:calc(10px + env(safe-area-inset-top));
+  right:calc(10px + env(safe-area-inset-right));
+  z-index:51;
+}
+.full-bar .cnt{
+  font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:20px;
+  font-weight:600;
+  color:#fff;
+  background:rgba(0,0,0,.6);
+  padding:8px 12px;
+  border-radius:10px;
+}
+.full-bar button{
+  appearance:none; -webkit-appearance:none;
+  font:inherit;
+  font-size:16px;
+  font-weight:600;
+  min-height:44px;
+  padding:0 16px;
+  border-radius:10px;
+  border:0;
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+}
 
 .hint{
   font-size:14px;
@@ -520,7 +578,13 @@ textarea.dump{
 
     <div id="warnings"></div>
 
-    <div class="shot" id="shot"><canvas id="cv"></canvas></div>
+    <div class="shot" id="shot">
+      <canvas id="cv"></canvas>
+      <div class="full-bar">
+        <span class="cnt"><span id="full-count">0</span> zrn</span>
+        <button type="button" id="btn-full-close">Hotovo</button>
+      </div>
+    </div>
 
     <div style="height:8px"></div>
     <div class="legend">
@@ -539,7 +603,10 @@ textarea.dump{
     </div>
 
     <div style="height:10px"></div>
-    <button class="btn secondary" id="btn-mask">Co appka vidí</button>
+    <div class="btn-row">
+      <button class="btn secondary" id="btn-full">Celá obrazovka</button>
+      <button class="btn secondary" id="btn-mask">Co appka vidí</button>
+    </div>
     <div style="height:8px"></div>
     <div class="label" id="diag"></div>
 
@@ -1378,6 +1445,7 @@ function draw() {
     ctx.stroke();
   }
   document.getElementById("out-count").textContent = total();
+  document.getElementById("full-count").textContent = total();
   recalcHtz();
 }
 
@@ -1475,6 +1543,21 @@ document.getElementById("btn-zoom").addEventListener("click", ev => {
   const on = box.classList.toggle("zoom");
   ev.currentTarget.textContent = on ? "Zmenšit" : "Přiblížit";
 });
+
+/* Full screen is a fixed overlay rather than the Fullscreen API: Safari on an
+   iPhone does not offer that API for anything but video. */
+function setFull(on) {
+  const box = document.getElementById("shot");
+  box.classList.toggle("full", on);
+  if (on) {
+    box.classList.remove("zoom");
+    document.getElementById("btn-zoom").textContent = "Přiblížit";
+  }
+  document.body.style.overflow = on ? "hidden" : "";
+}
+document.getElementById("btn-full").addEventListener("click", () => setFull(true));
+document.getElementById("btn-full-close").addEventListener("click", () => setFull(false));
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") setFull(false); });
 
 
 /* ══════════════════════════════════════════════════════════════
