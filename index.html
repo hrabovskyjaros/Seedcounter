@@ -590,7 +590,7 @@ textarea.dump{
         <li><span class="n">✓</span><span><strong>Rozptýlené světlo.</strong> Ostré stíny a odlesky matou rozpoznávání. Nejlepší je stín nebo zataženo.</span></li>
         <li><span class="n">✓</span><span><strong>Čistá miska.</strong> Plevy, prach a úlomky se dají spočítat jako zrna. Misku předem vytři.</span></li>
       </ul>
-      <p class="hint">Bledě modrá miska funguje pro <strong>všechny plodiny</strong> — appka nehledá tmavé skvrny, ale barvu odlišnou od misky. Proto se stejně dobře najde jantarová pšenice i černá řepka.</p>
+      <p class="hint">Modrá miska funguje pro <strong>všechny plodiny</strong> — appka hledá všechno, co není modré. Proto se stejně dobře najde jantarová pšenice, žlutá kukuřice i černá řepka, a stín pod zrnem, který zůstává modrý, se nepočítá.</p>
     </div>
 
     <div style="height:14px"></div>
@@ -775,8 +775,13 @@ function morph(mask, w, h, dilate) {
   return out;
 }
 
-/** Fill background pockets fully enclosed by foreground (specular holes inside grains). */
-function fillHoles(mask, w, h) {
+/**
+ * Fill small background pockets fully enclosed by foreground (glints inside a
+ * grain). Only small ones: the gap in the middle of a ring of touching grains is
+ * enclosed too, and filling it turned a dozen maize kernels into one shape the
+ * size of twenty.
+ */
+function fillHoles(mask, w, h, maxHole) {
   const seen = new Uint8Array(w * h);
   const stack = new Int32Array(w * h);
   let sp = 0;
@@ -790,7 +795,22 @@ function fillHoles(mask, w, h) {
     if (y > 0) pushIf(i - w);
     if (y < h - 1) pushIf(i + w);
   }
-  for (let i = 0; i < mask.length; i++) if (!mask[i] && !seen[i]) mask[i] = 1;
+  // what is left unseen are the enclosed pockets — measure each before filling
+  const pocket = new Int32Array(w * h);
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] || seen[i]) continue;
+    let n = 0;
+    seen[i] = 1; stack[sp++] = i;
+    while (sp > 0) {
+      const j = stack[--sp], x = j % w;
+      pocket[n++] = j;
+      if (x > 0 && !mask[j - 1] && !seen[j - 1]) { seen[j - 1] = 1; stack[sp++] = j - 1; }
+      if (x < w - 1 && !mask[j + 1] && !seen[j + 1]) { seen[j + 1] = 1; stack[sp++] = j + 1; }
+      if (j >= w && !mask[j - w] && !seen[j - w]) { seen[j - w] = 1; stack[sp++] = j - w; }
+      if (j + w < mask.length && !mask[j + w] && !seen[j + w]) { seen[j + w] = 1; stack[sp++] = j + w; }
+    }
+    if (n <= maxHole) for (let k = 0; k < n; k++) mask[pocket[k]] = 1;
+  }
   return mask;
 }
 
@@ -912,14 +932,92 @@ function components(mask, w, h) {
 }
 
 /**
- * Local background colour, as a coarse grid of tile medians.
+ * Which blobs lie outside the tray.
  *
- * A single background colour for the whole frame cannot describe a 3 cm deep
- * tray: the wall throws a shadow, so the floor near an edge is a different
- * colour from the floor in the middle. Grains sitting in that shadow then merge
- * with it into one shape and get discarded along with it — measured at -6 % on
- * the count. Each tile is much larger than a grain and grains cover a minority
- * of it, so the tile median is the tray floor right there, shadow included.
+ * The tray floor is the largest connected stretch of background. A grain lies
+ * on it, so most of the background around a grain's outline is tray floor.
+ * Clothing, a table edge or a box of seed at the edge of the shot is ringed by
+ * other things instead — on one maize photo a fold of trousers below the tray
+ * came out as five grains. Testing the edge of the frame alone does not catch
+ * that: the fold never touched the edge.
+ */
+function outsideTray(mask, label, nBlobs, w, h) {
+  const n = w * h;
+  const bg = new Int32Array(n).fill(-1);
+  const stack = new Int32Array(n);
+  let tray = -1, trayArea = 0, id = 0;
+  for (let s = 0; s < n; s++) {
+    if (mask[s] || bg[s] !== -1) continue;
+    let sp = 0, area = 0;
+    stack[sp++] = s; bg[s] = id;
+    while (sp > 0) {
+      const i = stack[--sp], x = i % w;
+      area++;
+      if (x > 0 && !mask[i - 1] && bg[i - 1] === -1) { bg[i - 1] = id; stack[sp++] = i - 1; }
+      if (x < w - 1 && !mask[i + 1] && bg[i + 1] === -1) { bg[i + 1] = id; stack[sp++] = i + 1; }
+      if (i >= w && !mask[i - w] && bg[i - w] === -1) { bg[i - w] = id; stack[sp++] = i - w; }
+      if (i + w < n && !mask[i + w] && bg[i + w] === -1) { bg[i + w] = id; stack[sp++] = i + w; }
+    }
+    if (area > trayArea) { trayArea = area; tray = id; }
+    id++;
+  }
+
+  const onTray = new Uint32Array(nBlobs), edge = new Uint32Array(nBlobs);
+  for (let i = 0; i < n; i++) {
+    if (mask[i]) continue;
+    const x = i % w;
+    const nb = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+    for (const j of nb) {
+      if (j < 0 || j >= n || !mask[j]) continue;
+      const L = label[j];
+      edge[L]++;
+      if (bg[i] === tray) onTray[L]++;
+    }
+  }
+  const off = new Uint8Array(nBlobs);
+  for (let b = 0; b < nBlobs; b++) off[b] = edge[b] > 0 && onTray[b] < edge[b] * 0.5 ? 1 : 0;
+  return off;
+}
+
+/**
+ * How much less blue each pixel is than the blue tray.
+ *
+ * Measured as a ratio to the pixel's own brightness, so darkening cancels out:
+ * the shadow a grain throws is still tray-blue, only dimmer, and stays tray. The
+ * plain colour distance used before counted that shadow as part of the grain,
+ * which glued neighbours together and split lone kernels in two. Yellow maize,
+ * amber wheat and black sunflower all score far from the tray, white glints on a
+ * grain too, so they no longer punch holes into it.
+ * Returns null when the tray is not blue enough for this to mean anything.
+ */
+function blueField(px, w, h) {
+  const n = w * h, ratio = new Float32Array(n);
+  const hist = new Uint32Array(512);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    const r = px[p], g = px[p + 1], b = px[p + 2];
+    const v = (b - Math.max(r, g * 0.5)) / (r + g + b + 40);
+    ratio[i] = v;
+    hist[Math.max(0, Math.min(511, Math.round((v + 1) * 255)))]++;
+  }
+  let acc = 0, tray = 0;
+  for (let k = 0; k < 512; k++) { acc += hist[k]; if (acc > n / 2) { tray = k / 255 - 1; break; } }
+  if (tray < 0.08) return null;
+
+  const dist = new Float32Array(n);
+  let maxD = 0;
+  for (let i = 0; i < n; i++) {
+    const d = Math.max(0, tray - ratio[i]) * 300;
+    dist[i] = d;
+    if (d > maxD) maxD = d;
+  }
+  return { dist, maxD };
+}
+
+/**
+ * Local background colour, as a coarse grid of tile medians.
+ * Fallback for a tray that is not blue. A single background colour for the
+ * whole frame cannot describe a deep tray whose wall throws a shadow, so each
+ * tile's median stands for the floor right there, shadow included.
  */
 function backgroundField(px, w, h) {
   const bs = Math.max(40, Math.round(Math.min(w, h) / 18));
@@ -951,8 +1049,7 @@ function backgroundField(px, w, h) {
 /**
  * Colour distance from the local background, per pixel.
  * The bilinear weights along x are the same on every row, so they are computed
- * once up front and the per-pixel work collapses to multiply-adds — sampling the
- * field through a helper call per pixel tripled the total runtime.
+ * once up front and the per-pixel work collapses to multiply-adds.
  */
 function distanceField(px, f, w, h) {
   const { bs, nbx, nby, R, G, B } = f;
@@ -989,30 +1086,20 @@ function distanceField(px, f, w, h) {
 
 /**
  * Segment grains out of a photo.
- * Every pixel is scored by its colour distance from the background, not by
- * brightness — that is what lets one pale blue tray work under amber wheat,
- * yellow soya and black rape alike, where a luminance threshold would need a
- * different background per crop.
- * The background is sampled locally rather than as one colour for the frame, so
- * the shadow the tray wall throws is compared against itself instead of being
- * mistaken for grain.
+ * On a blue tray every pixel is scored by how much less blue it is than the
+ * tray; on any other background, by colour distance from the local background.
  */
 function segment(imgData, w, h) {
   const px = imgData.data;
   if (typeof PROGRESS === "function") PROGRESS("Odečítám barvu misky…");
 
-  // --- distance-from-local-background map, normalised to its own maximum
-  const { dist, maxD } = distanceField(px, backgroundField(px, w, h), w, h);
+  const field = blueField(px, w, h) || distanceField(px, backgroundField(px, w, h), w, h);
+  const { dist, maxD } = field;
   if (maxD < 24) return { fail: "contrast" };
 
   const norm = new Uint8Array(w * h);
-  const hist = new Uint32Array(256);
   const k = 255 / maxD;
-  for (let i = 0; i < dist.length; i++) {
-    const v = Math.min(255, Math.round(dist[i] * k));
-    norm[i] = v;
-    hist[v]++;
-  }
+  for (let i = 0; i < dist.length; i++) norm[i] = Math.min(255, Math.round(dist[i] * k));
 
   const smooth = blur3(norm, w, h);
   const h2 = new Uint32Array(256);
@@ -1026,7 +1113,7 @@ function segment(imgData, w, h) {
   const cover = fg / mask.length;
   if (cover > 0.72) return { fail: "cover" };
 
-  mask = fillHoles(mask, w, h);
+  mask = fillHoles(mask, w, h, Math.max(20, (w * h) / 20000));
   mask = morph(mask, w, h, false);   // erode — snaps thin bridges, drops specks
   mask = morph(mask, w, h, true);    // dilate — restore grain size
 
@@ -1034,6 +1121,8 @@ function segment(imgData, w, h) {
   const cc = components(mask, w, h);
   let blobs = cc.blobs;
   if (!blobs.length) return { fail: "empty" };
+
+  const offTray = outsideTray(mask, cc.label, blobs.length, w, h);
 
   // --- drop dust: first pass median over anything above a floor area
   const floor = Math.max(12, (w * h) / 90000);
@@ -1047,6 +1136,7 @@ function segment(imgData, w, h) {
   let rim = 0;
   const kept = big.filter(b => {
     if (b.area < Math.max(floor, med * 0.28)) return false;
+    if (offTray[b.id]) { rim++; return false; }
     if (b.border && b.area > med * 8) { rim++; return false; }
     return true;
   });
@@ -1057,28 +1147,25 @@ function segment(imgData, w, h) {
 }
 
 /**
- * Blobs → one mark per grain, located by peaks of the distance transform.
+ * Blobs → one mark per grain.
  *
- * The obvious alternative — divide the blob's area by a typical grain's area —
- * cannot tell a single plump grain from two small ones stuck together, and real
- * samples vary in grain size by far more than the gap between those two cases:
- * at +-30 % size spread it invented 16 % extra grains. Peak finding asks a
- * different question, how many separate centres the shape has, which does not
- * care that one grain is bigger than another.
+ * Two independent counts per blob, and the larger one wins:
+ *  - peaks of the distance transform — how many separate centres the shape has;
+ *  - area — how many typical single grains fit into it.
+ * Peaks alone undercount a tight clump: kernels pressed together side by side
+ * leave no neck between them, and on a maize photo they found 143 of ~180.
+ * Area alone overcounts one plump grain as two, which is why it is rounded
+ * down hard and only ever adds grains the peaks missed.
  */
 const PEAK_MIN_FRAC = 0.52;   // a peak must be this deep inside the shape, relative to a typical grain
 const PEAK_DIST_FRAC = 0.85;  // never put two centres closer together than this
-const SADDLE_FRAC = 0.22;     // how deep the valley between two centres must be
+const SADDLE_FRAC = 0.10;     // how deep the valley between two centres must be
+const AREA_ROUND = 0.35;      // 1.65 grains of area still counts as one
 
 /**
  * Do two candidate centres belong to the same grain?
- *
- * Distance alone cannot answer this. A wheat grain is elongated, so the ridge of
- * the distance map running along it is long enough to hold two candidates that
- * are far apart — separating by distance alone counted nearly every cereal grain
- * twice (+74 %). What actually distinguishes two touching grains from one long
- * one is a valley: at the neck where two grains meet the distance map dips,
- * while along a single grain it never does.
+ * What distinguishes two touching grains from one long one is a valley: at the
+ * neck where two grains meet the distance map dips, along a single grain not.
  */
 function sameGrain(dist, w, ax, ay, bx, by, drop) {
   const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
@@ -1091,6 +1178,35 @@ function sameGrain(dist, w, ax, ay, bx, by, drop) {
   }
   const lo = Math.min(dist[ay * w + ax], dist[by * w + bx]);
   return low > lo - drop;   // no real dip on the way across — one grain
+}
+
+/** Spread n centres over a blob's pixels: the peaks found stay as seeds, the
+ *  missing ones start at the pixels farthest from any seed, then k-means. */
+function spreadCentres(pix, from, to, w, seeds, n) {
+  const step = Math.max(1, Math.floor((to - from) / 3000));
+  const xs = [], ys = [];
+  for (let k = from; k < to; k += step) { xs.push(pix[k] % w); ys.push((pix[k] / w) | 0); }
+  const c = seeds.map(p => ({ x: p.x, y: p.y }));
+  while (c.length < n) {
+    let far = 0, best = -1;
+    for (let i = 0; i < xs.length; i++) {
+      let m = Infinity;
+      for (const q of c) { const d = (q.x - xs[i]) ** 2 + (q.y - ys[i]) ** 2; if (d < m) m = d; }
+      if (m > best) { best = m; far = i; }
+    }
+    c.push({ x: xs[far], y: ys[far] });
+  }
+  const sx = new Float64Array(n), sy = new Float64Array(n), cnt = new Int32Array(n);
+  for (let it = 0; it < 10; it++) {
+    sx.fill(0); sy.fill(0); cnt.fill(0);
+    for (let i = 0; i < xs.length; i++) {
+      let bi = 0, bd = Infinity;
+      for (let j = 0; j < n; j++) { const d = (c[j].x - xs[i]) ** 2 + (c[j].y - ys[i]) ** 2; if (d < bd) { bd = d; bi = j; } }
+      sx[bi] += xs[i]; sy[bi] += ys[i]; cnt[bi]++;
+    }
+    for (let j = 0; j < n; j++) if (cnt[j]) { c[j].x = sx[j] / cnt[j]; c[j].y = sy[j] / cnt[j]; }
+  }
+  return c;
 }
 
 function toMarks(seg) {
@@ -1133,15 +1249,23 @@ function toMarks(seg) {
   const minDist2 = minDist * minDist;
   const drop = Math.max(0.6, r0 * SADDLE_FRAC);
 
-  const marks = [];
-  let split = 0, border = 0;
-
+  // pass 1 — centres by shape
+  const peaksOf = new Map();
   for (const b of kept) {
     const from = starts[b.id], to = starts[b.id + 1];
+    // Only local maxima are candidates. Testing every pixel deep enough inside
+    // the shape walked a line to each accepted peak for tens of thousands of
+    // pixels per clump — 22 s on a desktop for one maize photo.
     const cand = [];
     for (let k = from; k < to; k++) {
       const i = pix[k];
-      if (dist[i] >= minPeak) cand.push(i);
+      const d = dist[i];
+      if (d < minPeak) continue;
+      const x = i % w, y = (i / w) | 0;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) continue;
+      if (d < dist[i - 1] || d < dist[i + 1] || d < dist[i - w] || d < dist[i + w] ||
+          d < dist[i - w - 1] || d < dist[i - w + 1] || d < dist[i + w - 1] || d < dist[i + w + 1]) continue;
+      cand.push(i);
     }
     cand.sort((p, q) => dist[q] - dist[p]);
 
@@ -1156,6 +1280,23 @@ function toMarks(seg) {
       if (ok) peaks.push({ x, y });
     }
     if (!peaks.length) peaks.push({ x: b.cx, y: b.cy });   // too thin to peak — still one grain
+    peaksOf.set(b.id, peaks);
+  }
+
+  // A single grain's area, from blobs the peak search saw as exactly one grain.
+  // The band is tight on purpose: broken kernels and tip caps are lone blobs
+  // too, and letting them in shrank the unit enough to count a maize sample of
+  // 175 as 184.
+  const lone = kept.filter(b => peaksOf.get(b.id).length === 1 && b.area > med * 0.75 && b.area < med * 1.4);
+  const unit = lone.length >= 5 ? median(lone.map(b => b.area)) : med;
+
+  // pass 2 — top up from area where the shape gave too few centres
+  const marks = [];
+  let split = 0, border = 0;
+  for (const b of kept) {
+    let peaks = peaksOf.get(b.id);
+    const byArea = Math.floor(b.area / unit + AREA_ROUND);
+    if (byArea > peaks.length) peaks = spreadCentres(pix, starts[b.id], starts[b.id + 1], w, peaks, byArea);
 
     if (peaks.length > 1) split += peaks.length;
     if (b.border) border++;
@@ -1431,13 +1572,13 @@ async function handleFile(file) {
     const tips = [];
     const n = total();
     if (n > 0 && res.clustered / n > 0.3) {
-      tips.push("Velká část zrn se dotýká. Rozdělil jsem je podle tvaru, ale u hromádek je to nejisté — projeď oranžové značky očima.");
+      tips.push("Velká část zrn se dotýká. Rozdělil jsem je podle tvaru a plochy, ale u hromádek je to nejisté — projeď oranžové značky očima.");
     }
     if (res.border > Math.max(2, marks.length * 0.08)) {
       tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
     }
     if (seg.rim > 0) {
-      tips.push("V záběru je stěna misky nebo její stín — vynechal jsem je z počítání. Fotografuj kolměji shora, ať je v záběru jen dno misky.");
+      tips.push("V záběru je něco mimo dno misky (stěna, stůl, okolí) — vynechal jsem to z počítání. Fotografuj kolměji shora a blíž, ať je v záběru jen dno misky.");
     }
     if (n < 40) {
       tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
