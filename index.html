@@ -656,15 +656,15 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div class="card">
       <div class="field">
         <label class="label" for="in-trial">Pokus (zůstává pro celou sérii)</label>
-        <input type="text" id="in-trial" placeholder="např. FC Baník Ostrava" autocomplete="off">
+        <input type="text" id="in-trial" placeholder="FC Baník Ostrava" autocomplete="off">
       </div>
       <div class="field">
         <label class="label" for="in-name">1 · Kód vzorku</label>
-        <input type="text" id="in-name" placeholder="např. FCB" autocomplete="off">
+        <input type="text" id="in-name" placeholder="FCB" autocomplete="off">
       </div>
       <div class="field">
         <label class="label" for="in-weight">2 · Hmotnost navážky (g)</label>
-        <input type="text" id="in-weight" class="num-in" inputmode="decimal" placeholder="např. 19,22" autocomplete="off">
+        <input type="text" id="in-weight" class="num-in" inputmode="decimal" placeholder="19,22" autocomplete="off">
       </div>
       <p class="hint" id="weight-hint">Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.</p>
     </div>
@@ -758,7 +758,7 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div class="card">
       <div class="field">
         <label class="label" for="in-weight-fix">Hmotnost navážky (g)</label>
-        <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" placeholder="např. 19,22" autocomplete="off">
+        <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" placeholder="19,22" autocomplete="off">
       </div>
     </div>
 
@@ -784,6 +784,7 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div id="list-rows"></div>
     <div style="height:16px"></div>
     <button class="btn secondary" id="btn-copy">Zkopírovat všechna měření</button>
+    <a class="btn secondary hide" id="station-csv" href="api/export.csv" download style="margin-top:10px; text-decoration:none">Stáhnout všechna měření ze stanice (CSV)</a>
     <div style="height:10px"></div>
     <textarea class="dump hide" id="dump" readonly></textarea>
     <div style="height:10px"></div>
@@ -1939,8 +1940,17 @@ async function handleFile(file, append) {
     pic.getContext("2d").drawImage(bmp, 0, 0, w, h);
 
     const data = pic.getContext("2d").getImageData(0, 0, w, h);
-    const seg = await countGrains(data, w, h);
+    acceptCount(pic, w, h, await countGrains(data, w, h));
+  } catch (err) {
+    document.getElementById("warnings").innerHTML =
+      '<div class="note bad">Fotku se nepodařilo načíst. Zkus ji vyfotit znovu.</div>';
+    show("s-result");
+  }
+}
 
+/* A finished count — from this page's own pipeline or from the counting
+   station — becomes a photo of the sample, or a reason it could not be one. */
+function acceptCount(pic, w, h, seg) {
     if (seg.fail) {
       const msg = {
         contrast: "Zrna na fotce nejde odlišit od misky. Zkontroluj, že fotíš proti dnu misky a že vzorek není přesvícený.",
@@ -1995,15 +2005,10 @@ async function handleFile(file, append) {
     shots.push({
       photo: pic, marks: res.marks, undo: [], free, diag, warn,
       grainR: Math.max(4, res.r0),
-      mask: res.mask ? buildMaskCanvas(res.mask, w, h) : null
+      mask: res.maskCanvas || (res.mask ? buildMaskCanvas(res.mask, w, h) : null)
     });
     showShot(shots.length - 1);
     show("s-result");
-  } catch (err) {
-    document.getElementById("warnings").innerHTML =
-      '<div class="note bad">Fotku se nepodařilo načíst. Zkus ji vyfotit znovu.</div>';
-    show("s-result");
-  }
 }
 
 document.getElementById("in-cam").addEventListener("change", e => {
@@ -2109,11 +2114,93 @@ document.getElementById("cam-file").addEventListener("change", e => {
 });
 document.addEventListener("visibilitychange", () => { if (document.hidden) releaseCamera(); });
 
-// the photo buttons open the in-app camera instead of the system one
-if (camOK) {
-  document.getElementById("lbl-cam").addEventListener("click", e => { e.preventDefault(); openCamera(false); });
-  document.getElementById("lbl-next").addEventListener("click", e => { e.preventDefault(); openCamera(shots.length > 0); });
+/* ══════════════════════════════════════════════════════════════
+   Counting station
+   Opened from the counting box (the Raspberry in it serves this very page),
+   a photo is taken by the box camera and counted by the box: the page asks
+   for it and gets back the photo and the marks. Elsewhere — GitHub Pages,
+   a phone — the ping finds nothing and the page works on its own as ever.
+   The station is also reached from other computers on the network, where the
+   browser has no camera of its own to offer; it does not need one.
+   ═══════════════════════════════════════════════════════════════ */
+let STATION = false;
+fetch("api/ping", { cache: "no-store" })
+  .then(r => r.ok ? r.json() : null)
+  .then(j => {
+    if (!j || !j.station) return;
+    STATION = true;
+    document.getElementById("lbl-cam").querySelector("span").textContent =
+      j.demo ? "📷 Vyfotit (stanice — ukázkové fotky)" : "📷 Vyfotit kamerou stanice";
+    document.getElementById("station-csv").classList.remove("hide");
+  })
+  .catch(() => { /* not a station */ });
+
+function loadImage(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
 }
+
+async function stationShoot(append) {
+  if (shooting) return;
+  shooting = true;
+  if (!append) { shots = []; cur = -1; }
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  setBusy("Fotím a počítám…");
+  show("s-busy");
+  try {
+    const r = await fetch("api/shoot", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ side: CROPS[crop].side })
+    });
+    const seg = await r.json();
+    if (!r.ok || seg.error) throw new Error(seg.error || r.status);
+    const w = seg.w, h = seg.h;
+    const pic = document.createElement("canvas");
+    pic.width = w; pic.height = h;
+    pic.getContext("2d").drawImage(await loadImage(seg.photo), 0, 0, w, h);
+    if (seg.mask) {
+      // the station sends its mask as a grey PNG; tint it like the page's own
+      const m = document.createElement("canvas");
+      m.width = w; m.height = h;
+      const mc = m.getContext("2d");
+      mc.drawImage(await loadImage(seg.mask), 0, 0, w, h);
+      const d = mc.getImageData(0, 0, w, h);
+      for (let p = 0; p < d.data.length; p += 4) {
+        const on = d.data[p] > 127;
+        d.data[p] = 255; d.data[p + 1] = 0; d.data[p + 2] = 170; d.data[p + 3] = on ? 130 : 0;
+      }
+      mc.putImageData(d, 0, 0);
+      seg.maskCanvas = m;
+      delete seg.mask;
+    }
+    acceptCount(pic, w, h, seg);
+  } catch (err) {
+    document.getElementById("warnings").innerHTML =
+      '<div class="note bad">Stanice nevyfotila (' + String(err.message || err) + '). Zkus to znovu.</div>';
+    renderShots();
+    show("s-result");
+  } finally {
+    shooting = false;
+  }
+}
+
+/** One way to take the next photo, wherever the page is running. */
+function takePhoto(append) {
+  if (STATION) stationShoot(append);
+  else if (camOK) openCamera(append);
+  else document.getElementById(append ? "in-next" : "in-cam").click();
+}
+
+// the photo buttons go through takePhoto instead of the system camera
+document.getElementById("lbl-cam").addEventListener("click", e => {
+  if (!STATION && !camOK) return;
+  e.preventDefault();
+  takePhoto(false);
+});
+document.getElementById("lbl-next").addEventListener("click", e => {
+  if (!STATION && !camOK) return;
+  e.preventDefault();
+  takePhoto(shots.length > 0);
+});
 
 /* Keyboard, for a tablet on a stand worked from a Bluetooth keyboard:
    in the camera space or Enter shoots and Esc goes back; on the result
@@ -2127,9 +2214,9 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if (document.getElementById("s-result").classList.contains("hide")) return;
-  if (ev.key === " " && !document.getElementById("next-box").classList.contains("hide") && camOK) {
+  if (ev.key === " " && !document.getElementById("next-box").classList.contains("hide") && (STATION || camOK)) {
     ev.preventDefault();
-    openCamera(shots.length > 0);
+    takePhoto(shots.length > 0);
   } else if (ev.key === "Enter" && !document.getElementById("btn-save").disabled) {
     ev.preventDefault();
     document.getElementById("btn-save").click();
@@ -2184,8 +2271,7 @@ wIn.addEventListener("keydown", ev => {
   ev.preventDefault();
   if (!(weightValue() > 0)) return;
   wIn.blur();
-  if (camOK) openCamera(false);
-  else document.getElementById("in-cam").click();
+  takePhoto(false);
 });
 
 /* ══════════════════════════════════════════════════════════════
@@ -2197,7 +2283,7 @@ document.getElementById("btn-save").addEventListener("click", () => {
   const wgt = weightValue();
   const name = document.getElementById("in-name").value.trim();
   const d = new Date();
-  saved.unshift({
+  const rec = {
     id: Date.now(),
     trial: trialIn.value.trim(),
     name: name || "Vzorek " + (saved.length + 1),
@@ -2207,8 +2293,16 @@ document.getElementById("btn-save").addEventListener("click", () => {
     weight: wgt,
     htz: htz,
     when: d.toLocaleDateString("cs-CZ") + " " + d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })
-  });
+  };
+  saved.unshift(rec);
   persist();
+  // on the station every measurement also goes into the CSV on the box, so it
+  // outlives this browser and can be fetched from any computer on the network
+  if (STATION) {
+    fetch("api/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rec) })
+      .then(r => { if (!r.ok) throw new Error(r.status); })
+      .catch(() => alert("Měření se uložilo jen v tomto prohlížeči, do stanice ne. Zkontroluj, že stanice běží."));
+  }
   setWeight("", null);
   document.getElementById("in-name").value = "";
   shots = []; cur = -1;
