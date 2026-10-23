@@ -115,6 +115,10 @@ class Station:
             res = htz_count.count(rgb)
             t2 = time.time()
             print(f"spočítáno za {t2 - t1:.1f} s: {len(res.get('marks', []))} zrn", flush=True)
+        # The last photo at full working size stays on the box, to be fetched
+        # from another computer when a count needs looking into.
+        cv2.imwrite(str(self.data_dir / "posledni.jpg"), rgb[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 92])
+
         # The count runs at full working size; the browser gets a smaller copy
         # with the marks scaled to it. A 2400 px photo and mask made Chromium on
         # the Pi's 1 GB crawl at every tap, and the screen shows no more anyway.
@@ -195,6 +199,12 @@ def make_handler(station):
                 body = station.csv_path.read_bytes() if station.csv_path.exists() else "﻿".encode() + ";".join(CSV_FIELDS).encode()
                 return self.send(200, body, "text/csv; charset=utf-8",
                                  {"Content-Disposition": 'attachment; filename="mereni-htz.csv"'})
+            if path == "/api/posledni.jpg":
+                f = station.data_dir / "posledni.jpg"
+                if f.exists():
+                    return self.send(200, f.read_bytes(), "image/jpeg",
+                                     {"Content-Disposition": 'attachment; filename="posledni-fotka.jpg"'})
+                return self.send(404, "Zatím žádná fotka".encode("utf-8"), "text/plain; charset=utf-8")
             if path in STATIC:
                 name, ctype = STATIC[path]
                 f = APP_DIR / name
