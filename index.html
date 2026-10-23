@@ -751,7 +751,7 @@ function renderCrops() {
     "Nasyp <b>" + c.scoop + "</b>" + (c.approx ? " (" + c.approx + ")" : "") +
     ", <b>zvaž ji</b> a rozprostři v misce do plochy zhruba <b>" + c.area +
     "</b>. Přesnou hmotnost trefovat nemusíš — stačí ji přesně zvážit." +
-    (c.photos > 1 ? " Vzorek vyfotíš <b>dvakrát</b>, mezi fotkami misku protřeseš." : "");
+    (c.photos > 1 ? " Když bude volně ležet aspoň polovina zrn, stačí <b>jedna fotka</b>; jinak tě appka vyzve k druhé." : "");
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1437,6 +1437,9 @@ function total() { return marks.reduce((s, m) => s + m.n, 0); }
 let shots = [], cur = -1;
 const FREE_MIN = 0.2;      // below this share of free grains a photo counts high
 const SPREAD_MAX = 0.04;   // two photos of one sample further apart than this disagree
+// A photo this well spread is trusted on its own: every checked photo above
+// 40 % free was within one grain of the hand count.
+const FREE_DONE = 0.5;
 
 function shotCount(s) { return s.marks.reduce((a, m) => a + m.n, 0); }
 
@@ -1452,10 +1455,12 @@ function spread() {
   return (Math.max(...c) - Math.min(...c)) / Math.max(1, Math.min(...c));
 }
 
-/** How many photos this sample needs: the crop's default, plus one more when
- *  the first two are both crowded or do not agree. Never more than three. */
+/** How many photos this sample needs: none more once one is spread well
+ *  enough, else the crop's default, plus one more when the first two are both
+ *  crowded or do not agree. Never more than three. */
 function needed() {
   const want = CROPS[crop].photos || 1;
+  if (shots.length && shots[bestShot()].free >= FREE_DONE) return shots.length;
   if (want < 2 || shots.length < 2) return want;
   const b = bestShot();
   return (shots[b].free < FREE_MIN || spread() > SPREAD_MAX) ? 3 : 2;
@@ -1792,14 +1797,12 @@ async function handleFile(file, append) {
     const crowded = n > 0 && free < FREE_MIN;
     if (crowded) {
       tips.push("Samostatně leží jen " + Math.round(free * 100) + " % zrn. Velikost zrna appka měří na volně ležících zrnech, takže u nahrnutého vzorku obvykle napočítá víc, než je ve skutečnosti. <b>Rozhrň vzorek po celém dně misky a vyfoť znovu</b> — ať volně leží aspoň pětina zrn.");
-    } else if (n > 0 && res.clustered / n > 0.3) {
-      tips.push("Velká část zrn se dotýká. Rozdělil jsem je podle tvaru a plochy, ale u hromádek je to nejisté — projeď oranžové značky očima.");
     }
+    // No notes for touching grains or for things beside the tray: one shows on
+    // nearly every photo and the other on every photo from a stand, and both
+    // are handled already — the free share above, the tray test in segment().
     if (res.border > Math.max(2, n * 0.08)) {
       tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
-    }
-    if (seg.rim > 0) {
-      tips.push("V záběru je něco mimo dno misky (stěna, stůl, okolí) — vynechal jsem to z počítání. Fotografuj kolměji shora a blíž, ať je v záběru jen dno misky.");
     }
     if (n < 40) {
       tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
