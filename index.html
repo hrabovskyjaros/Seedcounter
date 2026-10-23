@@ -653,8 +653,12 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
 
     <div class="card">
       <div class="field">
-        <label class="label" for="in-name">1 · Označení vzorku</label>
-        <input type="text" id="in-name" placeholder="např. vzorek 3" autocomplete="off">
+        <label class="label" for="in-trial">Pokus (zůstává pro celou sérii)</label>
+        <input type="text" id="in-trial" placeholder="např. 4S" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="in-name">1 · Kód vzorku</label>
+        <input type="text" id="in-name" placeholder="např. 1 A" autocomplete="off">
       </div>
       <div class="field">
         <label class="label" for="in-weight">2 · Hmotnost navážky (g)</label>
@@ -2132,10 +2136,26 @@ document.addEventListener("keydown", ev => {
   }
 });
 
-/* Enter walks the home screen: name → weight → camera, so a sample goes in
-   from the keyboard alone. */
+/* The trial a series of samples belongs to is typed once and stays — across
+   saves and across closing the app — until the next series overwrites it. */
+const TRIAL_KEY = "htz-pocitadlo-pokus";
+const trialIn = document.getElementById("in-trial");
+try { trialIn.value = localStorage.getItem(TRIAL_KEY) || ""; } catch (e) { /* ignore */ }
+trialIn.addEventListener("input", () => {
+  try { localStorage.setItem(TRIAL_KEY, trialIn.value.trim()); } catch (e) { /* ignore */ }
+});
+
+/* Tab and Enter walk the home screen: trial → code → weight → photo, so a
+   sample goes in from the keyboard alone. Tab is moved by hand because Safari
+   on an iPad, by default, tabs between text fields only and skips the photo
+   button. */
+trialIn.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter" && !(ev.key === "Tab" && !ev.shiftKey)) return;
+  ev.preventDefault();
+  document.getElementById("in-name").focus();
+});
 document.getElementById("in-name").addEventListener("keydown", ev => {
-  if (ev.key !== "Enter") return;
+  if (ev.key !== "Enter" && !(ev.key === "Tab" && !ev.shiftKey)) return;
   ev.preventDefault();
   wIn.focus();
 });
@@ -2152,6 +2172,12 @@ document.getElementById("in-name").addEventListener("keydown", ev => {
 });
 
 wIn.addEventListener("keydown", ev => {
+  if (ev.key === "Tab" && !ev.shiftKey) {
+    if (!(weightValue() > 0)) return;
+    ev.preventDefault();
+    document.getElementById("lbl-cam").focus();
+    return;
+  }
   if (ev.key !== "Enter") return;
   ev.preventDefault();
   if (!(weightValue() > 0)) return;
@@ -2171,6 +2197,7 @@ document.getElementById("btn-save").addEventListener("click", () => {
   const d = new Date();
   saved.unshift({
     id: Date.now(),
+    trial: trialIn.value.trim(),
     name: name || "Vzorek " + (saved.length + 1),
     crop: CROPS[crop].name,
     count: usedCount(),
@@ -2193,6 +2220,9 @@ document.getElementById("btn-cancel").addEventListener("click", () => {
   show("s-home");
 });
 
+// "4S · 1 A" — the trial first, so a series reads together in the list
+function sampleLabel(m) { return (m.trial ? m.trial + " · " : "") + m.name; }
+
 function renderList() {
   const box = document.getElementById("list-rows");
   box.innerHTML = "";
@@ -2208,7 +2238,7 @@ function renderList() {
     const who = document.createElement("div");
     who.className = "who";
     const b = document.createElement("b");
-    b.textContent = m.name;
+    b.textContent = sampleLabel(m);
     const s = document.createElement("span");
     s.textContent = (m.crop ? m.crop + " · " : "") + m.count + " zrn · " + fmt2(m.weight) + " g · " + m.when;
     who.append(b, s);
@@ -2219,7 +2249,7 @@ function renderList() {
     kill.className = "kill";
     kill.type = "button";
     kill.textContent = "×";
-    kill.setAttribute("aria-label", "Smazat " + m.name);
+    kill.setAttribute("aria-label", "Smazat " + sampleLabel(m));
     kill.addEventListener("click", () => {
       saved = saved.filter(x => x.id !== m.id);
       persist(); renderList(); renderRecent();
@@ -2246,7 +2276,7 @@ function renderRecent() {
     const who = document.createElement("div");
     who.className = "who";
     const b = document.createElement("b");
-    b.textContent = m.name;
+    b.textContent = sampleLabel(m);
     const s = document.createElement("span");
     s.textContent = m.count + " zrn · " + fmt2(m.weight) + " g";
     who.append(b, s);
@@ -2269,8 +2299,8 @@ function renderRecent() {
 }
 
 document.getElementById("btn-copy").addEventListener("click", async () => {
-  const txt = ["Vzorek\tPlodina\tZrn\tFotky (zrn)\tHmotnost (g)\tHTZ (g)\tČas"]
-    .concat(saved.map(m => [m.name, m.crop || "", m.count, (m.shots || [m.count]).join(" / "),
+  const txt = ["Pokus\tVzorek\tPlodina\tZrn\tFotky (zrn)\tHmotnost (g)\tHTZ (g)\tČas"]
+    .concat(saved.map(m => [m.trial || "", m.name, m.crop || "", m.count, (m.shots || [m.count]).join(" / "),
                             fmt2(m.weight), fmt1(m.htz), m.when].join("\t")))
     .join("\n");
   const dump = document.getElementById("dump");
