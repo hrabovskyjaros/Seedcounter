@@ -488,6 +488,88 @@ textarea.dump{
   padding:10px;
 }
 
+/* ---------- in-app camera ---------- */
+.cam{
+  position:fixed;
+  inset:0;
+  z-index:60;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.cam video{width:100%; height:100%; object-fit:contain;}
+.cam-top{
+  position:fixed;
+  top:calc(10px + env(safe-area-inset-top));
+  left:calc(10px + env(safe-area-inset-left));
+  right:calc(10px + env(safe-area-inset-right));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.cam-top .t{
+  color:#fff;
+  font-weight:650;
+  font-size:17px;
+  background:rgba(0,0,0,.55);
+  padding:8px 12px;
+  border-radius:10px;
+}
+.cam button.cam-btn, .cam label.cam-btn{
+  appearance:none; -webkit-appearance:none;
+  font:inherit;
+  font-size:16px;
+  font-weight:600;
+  min-height:44px;
+  padding:0 16px;
+  border-radius:10px;
+  border:0;
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  position:relative;
+}
+.cam-shoot{
+  appearance:none; -webkit-appearance:none;
+  position:fixed;
+  bottom:calc(28px + env(safe-area-inset-bottom));
+  left:50%;
+  transform:translateX(-50%);
+  width:88px; height:88px;
+  border-radius:50%;
+  border:6px solid #fff;
+  background:rgba(255,255,255,.3);
+  cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+.cam-shoot:active{background:rgba(255,255,255,.75);}
+.cam-msg{
+  position:fixed;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  max-width:min(420px, calc(100vw - 32px));
+  color:#fff;
+  background:rgba(0,0,0,.7);
+  padding:14px 16px;
+  border-radius:12px;
+  text-align:center;
+  font-size:15px;
+}
+.cam-keys{
+  position:fixed;
+  bottom:calc(46px + env(safe-area-inset-bottom));
+  right:calc(16px + env(safe-area-inset-right));
+  color:rgba(255,255,255,.7);
+  font-size:12px;
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+}
+
 .hide{display:none !important;}
 </style>
 </head>
@@ -685,6 +767,22 @@ textarea.dump{
     <button class="btn secondary" id="help-back">Zpět</button>
   </section>
 
+</div>
+
+<!-- ══════════ FOTOAPARÁT ══════════ -->
+<div id="camera" class="cam hide" role="dialog" aria-label="Fotoaparát">
+  <video id="cam-video" playsinline muted autoplay></video>
+  <div class="cam-top">
+    <button type="button" class="cam-btn" id="cam-close">Zrušit</button>
+    <span class="t" id="cam-title">Fotka 1</span>
+    <label class="cam-btn">
+      <input type="file" id="cam-file" accept="image/*" capture="environment">
+      <span>Systémový foťák</span>
+    </label>
+  </div>
+  <div class="cam-msg hide" id="cam-msg"></div>
+  <button type="button" class="cam-shoot" id="cam-shoot" aria-label="Vyfotit"></button>
+  <div class="cam-keys">mezerník = vyfotit · Esc = zpět</div>
 </div>
 
 <script>
@@ -1837,6 +1935,111 @@ document.getElementById("in-gal").addEventListener("change", e => {
 document.getElementById("in-next").addEventListener("change", e => {
   handleFile(e.target.files[0], true);
   e.target.value = "";
+});
+
+/* ══════════════════════════════════════════════════════════════
+   In-app camera
+   On a stand the tablet hangs face down over the tray, out of easy reach,
+   and the system camera puts its small shutter somewhere different on every
+   device. A live view with one big button — or the space bar on a keyboard —
+   is easier to work. The stream stays open between photos of one session so
+   the browser does not ask for the camera every time; it is released when the
+   app goes to the background. Where the browser has no camera access the
+   buttons fall back to the system camera, as before.
+   ═══════════════════════════════════════════════════════════════ */
+const camBox = document.getElementById("camera");
+const camVideo = document.getElementById("cam-video");
+const camMsg = document.getElementById("cam-msg");
+const camOK = !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+let camStream = null, camAppend = false;
+
+function camLive() {
+  return camStream && camStream.getVideoTracks().some(t => t.readyState === "live");
+}
+
+async function openCamera(append) {
+  camAppend = append;
+  const k = append ? shots.length + 1 : 1;
+  document.getElementById("cam-title").textContent = "Fotka " + k;
+  camMsg.classList.add("hide");
+  camBox.classList.remove("hide");
+  document.body.style.overflow = "hidden";
+  try {
+    if (!camLive()) {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 4032 }, height: { ideal: 3024 } }
+      });
+    }
+    camVideo.srcObject = camStream;
+    await camVideo.play();
+  } catch (err) {
+    camMsg.textContent = "Kameru se nepodařilo spustit (" + (err && err.name || "chyba") +
+      "). Povol appce přístup ke kameře, nebo použij Systémový foťák nahoře.";
+    camMsg.classList.remove("hide");
+  }
+}
+
+function closeCamera() {
+  camBox.classList.add("hide");
+  document.body.style.overflow = "";
+}
+
+function releaseCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null;
+  camVideo.srcObject = null;
+}
+
+function shoot() {
+  const w = camVideo.videoWidth, h = camVideo.videoHeight;
+  if (!w || !h) return;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(camVideo, 0, 0, w, h);
+  c.toBlob(b => {
+    if (!b) return;
+    closeCamera();
+    handleFile(new File([b], "foto.jpg", { type: "image/jpeg" }), camAppend);
+  }, "image/jpeg", 0.95);
+}
+
+document.getElementById("cam-shoot").addEventListener("click", shoot);
+document.getElementById("cam-close").addEventListener("click", closeCamera);
+document.getElementById("cam-file").addEventListener("change", e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  closeCamera();
+  handleFile(f, camAppend);
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) releaseCamera(); });
+
+// the photo buttons open the in-app camera instead of the system one
+if (camOK) {
+  document.getElementById("lbl-cam").addEventListener("click", e => { e.preventDefault(); openCamera(false); });
+  document.getElementById("lbl-next").addEventListener("click", e => { e.preventDefault(); openCamera(shots.length > 0); });
+}
+
+/* Keyboard, for a tablet on a stand worked from a Bluetooth keyboard:
+   in the camera space or Enter shoots and Esc goes back; on the result
+   space takes the next photo and Enter saves. */
+document.addEventListener("keydown", ev => {
+  const t = ev.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+  if (!camBox.classList.contains("hide")) {
+    if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); shoot(); }
+    else if (ev.key === "Escape") { ev.preventDefault(); closeCamera(); }
+    return;
+  }
+  if (document.getElementById("s-result").classList.contains("hide")) return;
+  if (ev.key === " " && !document.getElementById("next-box").classList.contains("hide") && camOK) {
+    ev.preventDefault();
+    openCamera(shots.length > 0);
+  } else if (ev.key === "Enter" && !document.getElementById("btn-save").disabled) {
+    ev.preventDefault();
+    document.getElementById("btn-save").click();
+  }
 });
 
 /* ══════════════════════════════════════════════════════════════
