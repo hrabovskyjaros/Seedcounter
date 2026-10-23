@@ -34,32 +34,29 @@ sudo systemctl daemon-reload
 sudo systemctl enable htz-stanice
 sudo systemctl restart htz-stanice
 
-echo "== 4/4 Po přihlášení se otevře appka přes celou obrazovku =="
-mkdir -p "$HOME/.config/autostart" "$HOME/Desktop"
-# po přihlášení: počkat, než naběhne server, a otevřít appku
-# na ploše: zástupce, kdyby se okno zavřelo
-for pair in "$HOME/.config/autostart/htz-stanice.desktop:8" "$HOME/Desktop/htz-stanice.desktop:0"; do
-  f="${pair%:*}"; wait="${pair##*:}"
-  cat > "$f" <<EOF
+echo "== 4/4 Zástupce na ploše (appka se ovládá z počítače s Windows) =="
+# The Pi only takes the photos; the screen is on the Windows computer. The app
+# no longer opens here at login — Chromium on a Pi 3B+ was the slow part.
+rm -f "$HOME/.config/autostart/htz-stanice.desktop"
+mkdir -p "$HOME/Desktop"
+cat > "$HOME/Desktop/htz-stanice.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=HTZ stanice
 Comment=Počítadlo zrn
-Exec=/bin/sh $STANICE/otevrit-appku.sh $wait
+Exec=/bin/sh $STANICE/otevrit-appku.sh 0
 Icon=$(dirname "$STANICE")/apple-touch-icon.png
 Terminal=false
 EOF
-  chmod +x "$f"
-done
+chmod +x "$HOME/Desktop/htz-stanice.desktop"
 
 sleep 3
 if systemctl is-active --quiet htz-stanice; then
   echo
   echo "Hotovo. Stanice běží."
-  echo "  Na této obrazovce:   http://localhost:$PORT"
-  echo "  Z jiného počítače:   http://$(hostname).local:$PORT   nebo   http://$(hostname -I | awk '{print $1}'):$PORT"
-  echo "  Měření se ukládají do: $DATA/mereni.csv"
-  echo "Restartuj Raspberry (sudo reboot) a appka se otevře sama."
+  echo "  Na počítači s Windows otevři v Chrome nebo Edge:"
+  echo "      http://$(hostname).local:$PORT   nebo   http://$(hostname -I | awk '{print $1}'):$PORT"
+  echo "  Měření se ukládají i sem: $DATA/mereni.csv"
 else
   echo
   echo "POZOR: server stanice neběží. Poslední zprávy:"

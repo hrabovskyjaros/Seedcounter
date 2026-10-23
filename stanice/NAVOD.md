@@ -87,20 +87,25 @@ Pak restartuj:
 sudo reboot
 ```
 
-Po restartu se appka **otevře sama přes celou obrazovku**.
-Tlačítko na úvodní obrazovce bude **„📷 Vyfotit kamerou stanice“**.
+## 5. Používání (na počítači s Windows)
 
-## 5. Používání
+Raspberry ve skříni jen **fotí a posílá živý obraz**. Počítá a ukazuje počítač s Windows.
 
-Stejně jako na iPadu: **Pokus** ⏎ **Kód vzorku** ⏎ **Hmotnost** ⏎ (stanice vyfotí a spočítá) → ⏎ uložit.
+Na počítači otevři v **Chrome nebo Edge**: `http://seedcounter.local:8080`
+(když nefunguje, IP adresu z konce instalace, např. `http://192.168.1.50:8080`).
+Ulož si ji do záložek.
+
+- **Vlevo:** plodina, pokus, kód vzorku, hmotnost, poslední měření.
+- **Vpravo:** živý obraz z kamery ve skříni.
+
+**Pokus** ⏎ **Kód vzorku** ⏎ **Hmotnost** ⏎ (vyfotí a spočítá) → ⏎ uložit → zpět živý obraz.
 Když appka chce další fotku: protřes misku a dej **mezerník**.
 
-- **Z jiného počítače v síti:** otevři v prohlížeči `http://htz-stanice.local:8080`
-  (když nefunguje, použij IP adresu, kterou ukázala instalace, např. `http://192.168.1.50:8080`).
-- **Všechna měření ze stanice:** v appce *Všechna měření* → **Stáhnout všechna měření ze stanice (CSV)**.
-  Soubor se otevře v Excelu rovnou do sloupců.
-- Na Raspberry jsou uložená v souboru `~/htz-data/mereni.csv`.
-- Zavřít appku přes celou obrazovku: **Alt+F4**. Znovu otevřít: ikona **HTZ stanice** na ploše.
+- **Všechna měření ze stanice:** *Všechna měření* → **Stáhnout všechna měření ze stanice (CSV)**.
+- Na Raspberry jsou uložená v `~/htz-data/mereni.csv`.
+- Poslední fotka ve plném rozlišení: `http://seedcounter.local:8080/api/posledni.jpg`.
+
+> Appka na iPadu (GitHub) je samostatná a stanice ji nijak neovlivňuje.
 
 ## 6. Aktualizace
 
@@ -114,8 +119,8 @@ bash Seedcounter/stanice/aktualizovat.sh
 
 | Problém | Co udělat |
 |---|---|
-| Appka se neotevřela | Ikona **HTZ stanice** na ploše |
-| Na tlačítku není „kamerou stanice“ | Server neběží — v Terminálu `sudo systemctl restart htz-stanice` |
+| Stránka se na Windows neotevře | Zkus IP adresu místo `seedcounter.local`; na Raspberry `hostname -I` ji vypíše |
+| Vpravo není živý obraz | Server neběží — na Raspberry `sudo systemctl restart htz-stanice` |
 | Stanice nevyfotí | Zkontroluj kameru: `rpicam-hello --list-cameras` (musí ji vypsat) |
 | Chci vidět chyby serveru | `journalctl -u htz-stanice -n 50` |
 

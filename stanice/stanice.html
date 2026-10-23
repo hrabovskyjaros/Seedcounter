@@ -1,0 +1,2580 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F7F8F6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111614" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Spočítá zrna z fotky vzorku a z navážky dopočítá hmotnost tisíce zrn.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Počítadlo zrn">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<title>HTZ stanice</title>
+
+<style>
+:root{
+  --ground:#F7F8F6;
+  --panel:#FFFFFF;
+  --panel-2:#EDF1EE;
+  --ink:#16201B;
+  --muted:#5C6A63;
+  --line:#D8DFDA;
+  --line-strong:#BCC7C1;
+  --accent:#1F6F5C;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#E4F0EC;
+  --signal:#9A5D0B;
+  --signal-soft:#FBEEDA;
+  --danger:#A8261E;
+  --danger-soft:#FBE7E5;
+  --shadow:0 1px 2px rgba(22,32,27,.07), 0 10px 26px rgba(22,32,27,.06);
+  --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#111614;
+    --panel:#1A211D;
+    --panel-2:#232B27;
+    --ink:#E7EDE9;
+    --muted:#9AA8A1;
+    --line:#2E3833;
+    --line-strong:#425049;
+    --accent:#4FBF9F;
+    --accent-ink:#07160F;
+    --accent-soft:#1B2E28;
+    --signal:#E7A93C;
+    --signal-soft:#2E2618;
+    --danger:#FF8A7E;
+    --danger-soft:#33201E;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#111614;
+  --panel:#1A211D;
+  --panel-2:#232B27;
+  --ink:#E7EDE9;
+  --muted:#9AA8A1;
+  --line:#2E3833;
+  --line-strong:#425049;
+  --accent:#4FBF9F;
+  --accent-ink:#07160F;
+  --accent-soft:#1B2E28;
+  --signal:#E7A93C;
+  --signal-soft:#2E2618;
+  --danger:#FF8A7E;
+  --danger-soft:#33201E;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 26px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box;}
+
+html{ -webkit-text-size-adjust:100%; }
+
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size:16px;
+  line-height:1.45;
+  /* a pull-to-refresh in the middle of a 10 s count would throw the work away */
+  overscroll-behavior-y:contain;
+}
+
+/* Kills the 300 ms wait browsers keep in case a tap becomes a double-tap, and
+   the grey flash Android paints over anything tapped. */
+button, label.btn, .crop, .kill, canvas{
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+
+.wrap{
+  max-width:560px;
+  margin:0 auto;
+  padding:0 16px calc(40px + env(safe-area-inset-bottom));
+  padding-left:calc(16px + env(safe-area-inset-left));
+  padding-right:calc(16px + env(safe-area-inset-right));
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+}
+
+/* ---------- masthead ---------- */
+.masthead{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:12px;
+  padding:18px 0 0;
+}
+.masthead h1{
+  margin:0;
+  font-size:19px;
+  font-weight:650;
+  letter-spacing:-.01em;
+}
+.masthead .sub{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+/* scale-tick divider — the rhythm of a weighing scale */
+.ticks{
+  height:9px;
+  background-image:repeating-linear-gradient(to right,
+    var(--line-strong) 0 1px, transparent 1px 9px);
+  background-repeat:repeat-x;
+  background-position:left bottom;
+  background-size:auto 5px;
+  border-bottom:1px solid var(--line);
+  opacity:.85;
+}
+
+/* ---------- panels ---------- */
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.label{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+
+/* ---------- readout ---------- */
+.readout{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+}
+.readout .cell{
+  background:var(--panel);
+  padding:14px 16px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.readout .num{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:34px;
+  font-weight:600;
+  letter-spacing:-.02em;
+  line-height:1.05;
+}
+.readout .num.pending{color:var(--muted); font-weight:400;}
+.readout .unit{
+  font-size:13px;
+  color:var(--muted);
+  font-family:ui-sans-serif, system-ui, sans-serif;
+  font-weight:400;
+  letter-spacing:0;
+}
+.readout .cell.htz .num{color:var(--accent);}
+
+/* ---------- buttons ---------- */
+.btn{
+  appearance:none;
+  -webkit-appearance:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  width:100%;
+  min-height:56px;
+  padding:0 18px;
+  border-radius:12px;
+  border:1px solid transparent;
+  background:var(--accent);
+  color:var(--accent-ink);
+  font:inherit;
+  font-size:17px;
+  font-weight:600;
+  cursor:pointer;
+  text-align:center;
+  user-select:none;
+}
+.btn:active{transform:translateY(1px);}
+.btn.secondary{
+  background:var(--panel);
+  color:var(--ink);
+  border-color:var(--line-strong);
+  font-weight:500;
+  font-size:16px;
+  min-height:48px;
+}
+.btn.ghost{
+  background:transparent;
+  color:var(--muted);
+  border-color:transparent;
+  min-height:44px;
+  font-size:15px;
+  font-weight:500;
+}
+.btn.danger{
+  background:transparent;
+  color:var(--danger);
+  border-color:var(--line-strong);
+  min-height:48px;
+  font-size:16px;
+  font-weight:500;
+}
+.btn[disabled]{opacity:.45; cursor:default;}
+.btn.off{opacity:.4; pointer-events:none;}
+.btn-row{display:flex; gap:10px;}
+.btn-row .btn{flex:1;}
+
+label.btn{cursor:pointer;}
+input[type=file]{
+  position:absolute;
+  width:1px; height:1px;
+  opacity:0;
+  overflow:hidden;
+}
+input[type=file]:focus-visible + span{text-decoration:underline;}
+
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+
+/* ---------- inputs ---------- */
+.field{display:flex; flex-direction:column; gap:6px;}
+.field input[type=text]{
+  width:100%;
+  min-height:52px;
+  padding:0 14px;
+  border:1px solid var(--line-strong);
+  border-radius:11px;
+  background:var(--panel-2);
+  color:var(--ink);
+  font:inherit;
+  font-size:18px;
+}
+.field input.num-in{
+  font-family:ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:22px;
+}
+.field input::placeholder{color:var(--muted); opacity:.7;}
+
+/* ---------- image ---------- */
+/* The photo breaks out of the narrow column to the full width of the screen:
+   on a tablet the column wasted two thirds of it, and every pixel of photo is a
+   grain that is easier to check and to tap. Height is capped at the screen, so
+   the whole sample is always in view at once. */
+.shot{
+  width:100vw;
+  margin-left:calc(50% - 50vw);
+  overflow:auto;
+  background:var(--panel-2);
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  -webkit-overflow-scrolling:touch;
+  position:relative;
+}
+.shot canvas{
+  display:block;
+  margin:0 auto;
+  width:auto;
+  height:auto;
+  max-width:100%;
+  max-height:100vh;
+  max-height:100dvh;
+}
+.shot.zoom canvas{width:220%; max-width:none; max-height:none;}
+
+/* full screen — the photo and nothing else, still tap-to-correct */
+.shot.full{
+  position:fixed;
+  inset:0;
+  z-index:50;
+  width:auto;
+  margin:0;
+  border:0;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.shot.full canvas{max-width:100%; max-height:100%;}
+.full-bar{display:none;}
+.shot.full .full-bar{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  position:fixed;
+  top:calc(10px + env(safe-area-inset-top));
+  right:calc(10px + env(safe-area-inset-right));
+  z-index:51;
+}
+.full-bar .cnt{
+  font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:20px;
+  font-weight:600;
+  color:#fff;
+  background:rgba(0,0,0,.6);
+  padding:8px 12px;
+  border-radius:10px;
+}
+.full-bar button{
+  appearance:none; -webkit-appearance:none;
+  font:inherit;
+  font-size:16px;
+  font-weight:600;
+  min-height:44px;
+  padding:0 16px;
+  border-radius:10px;
+  border:0;
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+}
+
+.hint{
+  font-size:14px;
+  color:var(--muted);
+  margin:0;
+}
+.hint strong{color:var(--ink); font-weight:600;}
+
+.note{
+  border-left:3px solid var(--signal);
+  background:var(--signal-soft);
+  color:var(--ink);
+  padding:10px 12px;
+  border-radius:0 8px 8px 0;
+  font-size:14px;
+}
+.note.bad{border-left-color:var(--danger); background:var(--danger-soft);}
+.note.info{border-left-color:var(--accent); background:var(--accent-soft);}
+.note b{font-weight:650;}
+
+/* ---------- crop chooser ---------- */
+.crops{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+.crop{
+  appearance:none; -webkit-appearance:none;
+  min-height:50px;
+  padding:0 6px;
+  border-radius:11px;
+  border:1px solid var(--line-strong);
+  background:var(--panel-2);
+  color:var(--ink);
+  font:inherit;
+  font-size:15px;
+  font-weight:500;
+  cursor:pointer;
+}
+.crop[aria-pressed="true"]{
+  background:var(--accent);
+  color:var(--accent-ink);
+  border-color:var(--accent);
+  font-weight:650;
+}
+.note ul{margin:6px 0 0; padding-left:18px;}
+.note li{margin:2px 0;}
+
+/* ---------- history ---------- */
+.rows{display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+.row{
+  background:var(--panel);
+  display:grid;
+  grid-template-columns:1fr auto auto;
+  align-items:center;
+  gap:12px;
+  padding:11px 12px 11px 14px;
+}
+.row .who{display:flex; flex-direction:column; gap:2px; min-width:0;}
+.row .who b{font-weight:600; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.row .who span{font-size:12px; color:var(--muted); font-family:ui-monospace, Menlo, Consolas, monospace; font-variant-numeric:tabular-nums;}
+.row .val{
+  font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric:tabular-nums;
+  font-size:19px;
+  font-weight:600;
+  color:var(--accent);
+}
+.row .kill{
+  appearance:none; -webkit-appearance:none;
+  width:34px; height:34px;
+  border-radius:9px;
+  border:1px solid var(--line);
+  background:transparent;
+  color:var(--muted);
+  font-size:17px;
+  line-height:1;
+  cursor:pointer;
+}
+.row.photo-row{grid-template-columns:1fr auto; cursor:pointer;}
+.row.photo-row.cur{box-shadow:inset 3px 0 0 var(--accent);}
+.row.photo-row .tag{font-size:12px; font-weight:650; color:var(--accent); white-space:nowrap;}
+.empty{
+  padding:22px 14px;
+  text-align:center;
+  color:var(--muted);
+  font-size:15px;
+  border:1px dashed var(--line-strong);
+  border-radius:12px;
+}
+
+/* ---------- steps ---------- */
+.steps{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:11px;}
+.steps li{display:grid; grid-template-columns:26px 1fr; gap:11px; align-items:start; font-size:15px;}
+.steps .n{
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+  font-size:12px;
+  font-weight:600;
+  color:var(--accent);
+  background:var(--accent-soft);
+  border-radius:7px;
+  height:26px;
+  display:flex; align-items:center; justify-content:center;
+  font-variant-numeric:tabular-nums;
+}
+
+.spinner{
+  width:22px; height:22px;
+  border:2.5px solid var(--line-strong);
+  border-top-color:var(--accent);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion: reduce){
+  .spinner{animation-duration:2.4s;}
+  .btn:active{transform:none;}
+}
+.busy{display:flex; align-items:center; gap:12px; justify-content:center; padding:26px 0; color:var(--muted); font-size:15px;}
+
+.formula{
+  font-family:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size:14px;
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:9px;
+  padding:11px 12px;
+  color:var(--ink);
+  overflow-x:auto;
+  white-space:nowrap;
+}
+
+.legend{display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); align-items:center;}
+.legend i{width:11px; height:11px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px;}
+
+textarea.dump{
+  width:100%;
+  min-height:120px;
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+  font-size:13px;
+  border:1px solid var(--line-strong);
+  border-radius:10px;
+  background:var(--panel-2);
+  color:var(--ink);
+  padding:10px;
+}
+
+/* ---------- action bar ----------
+   Slides up from the bottom once a sample needs no more photos, so saving is
+   one tap wherever the page is scrolled to. */
+/* No panel of its own: two frosted-glass capsules float over the photo at
+   the very bottom of the screen, and the grains show through them. */
+.actbar{
+  position:fixed;
+  left:0; right:0; bottom:0;
+  z-index:40;
+  padding:0 calc(16px + env(safe-area-inset-right)) calc(14px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+  pointer-events:none;
+  transform:translateY(130%);
+  transition:transform .28s cubic-bezier(.2,.9,.3,1.15);
+}
+.actbar.up{transform:none;}
+.actbar .in{max-width:560px; margin:0 auto; display:flex; gap:12px; pointer-events:auto;}
+.actbar .btn{
+  min-height:58px;
+  border-radius:999px;
+  font-size:17px;
+  font-weight:650;
+  color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.45);
+  background:linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.08));
+  -webkit-backdrop-filter:blur(18px) saturate(180%);
+  backdrop-filter:blur(18px) saturate(180%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(255,255,255,.12), 0 8px 24px rgba(0,0,0,.28);
+}
+.actbar .btn.glass-save{
+  flex:1;
+  background:linear-gradient(180deg, rgba(64,214,150,.62), rgba(31,140,100,.48));
+  border-color:rgba(190,255,225,.6);
+}
+.actbar .btn.glass-cancel{
+  flex:0 0 38%;
+  color:#ffd9d6;
+}
+body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
+@media (prefers-reduced-motion: reduce){ .actbar{transition:none;} }
+/* where the browser has no backdrop blur, a darker glass keeps the text legible */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .actbar .btn{background:rgba(20,26,23,.78);}
+  .actbar .btn.glass-save{background:rgba(31,140,100,.9);}
+}
+
+/* ---------- in-app camera ---------- */
+.cam{
+  position:fixed;
+  inset:0;
+  z-index:60;
+  background:#000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.cam video{width:100%; height:100%; object-fit:contain;}
+.cam-top{
+  position:fixed;
+  top:calc(10px + env(safe-area-inset-top));
+  left:calc(10px + env(safe-area-inset-left));
+  right:calc(10px + env(safe-area-inset-right));
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+.cam-top .t{
+  color:#fff;
+  font-weight:650;
+  font-size:17px;
+  background:rgba(0,0,0,.55);
+  padding:8px 12px;
+  border-radius:10px;
+}
+.cam button.cam-btn, .cam label.cam-btn{
+  appearance:none; -webkit-appearance:none;
+  font:inherit;
+  font-size:16px;
+  font-weight:600;
+  min-height:44px;
+  padding:0 16px;
+  border-radius:10px;
+  border:0;
+  background:#fff;
+  color:#111;
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  position:relative;
+}
+.cam-shoot{
+  appearance:none; -webkit-appearance:none;
+  position:fixed;
+  bottom:calc(28px + env(safe-area-inset-bottom));
+  left:50%;
+  transform:translateX(-50%);
+  width:88px; height:88px;
+  border-radius:50%;
+  border:6px solid #fff;
+  background:rgba(255,255,255,.3);
+  cursor:pointer;
+  touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+.cam-shoot:active{background:rgba(255,255,255,.75);}
+.cam-msg{
+  position:fixed;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  max-width:min(420px, calc(100vw - 32px));
+  color:#fff;
+  background:rgba(0,0,0,.7);
+  padding:14px 16px;
+  border-radius:12px;
+  text-align:center;
+  font-size:15px;
+}
+.cam-keys{
+  position:fixed;
+  bottom:calc(46px + env(safe-area-inset-bottom));
+  right:calc(16px + env(safe-area-inset-right));
+  color:rgba(255,255,255,.7);
+  font-size:12px;
+  font-family:ui-monospace, Menlo, Consolas, monospace;
+}
+
+.hide{display:none !important;}
+</style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>Počítadlo zrn</h1>
+    <div class="sub">HTZ</div>
+  </header>
+  <div class="ticks"></div>
+
+  <!-- ══════════ ÚVOD ══════════ -->
+  <section id="s-home">
+    <div class="card">
+      <div class="label">Plodina</div>
+      <div class="crops" id="crops"></div>
+      <div class="note info" id="crop-tip"></div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="label">Postup</div>
+      <ol class="steps">
+        <li><span class="n">1</span><span>Navaž vzorek na váze a <strong>zapiš si hmotnost</strong>.</span></li>
+        <li><span class="n">2</span><span>Rozprostři zrna na podklad tak, aby se <strong>nedotýkala</strong>.</span></li>
+        <li><span class="n">3</span><span>Vyfoť kolmo shora — appka zrna spočítá a dopočítá HTZ.</span></li>
+      </ol>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="field">
+        <label class="label" for="in-trial">Pokus (zůstává pro celou sérii)</label>
+        <input type="text" id="in-trial" placeholder="FC Baník Ostrava" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="in-name">1 · Kód vzorku</label>
+        <input type="text" id="in-name" placeholder="FCB" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="in-weight">2 · Hmotnost navážky (g)</label>
+        <input type="text" id="in-weight" class="num-in" inputmode="decimal" placeholder="19,22" autocomplete="off">
+      </div>
+      <p class="hint" id="weight-hint">Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.</p>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="label">3 · Fotka vzorku</div>
+    <div style="height:8px"></div>
+
+    <label class="btn off" id="lbl-cam" tabindex="0" role="button">
+      <input type="file" id="in-cam" accept="image/*" capture="environment" disabled tabindex="-1">
+      <span>📷 Vyfotit vzorek</span>
+    </label>
+
+    <div style="height:10px"></div>
+
+    <label class="btn secondary off" id="lbl-gal" tabindex="0" role="button">
+      <input type="file" id="in-gal" accept="image/*" disabled tabindex="-1">
+      <span>Vybrat fotku z galerie</span>
+    </label>
+
+    <div style="height:18px"></div>
+
+    <div id="home-recent"></div>
+
+    <div style="height:8px"></div>
+    <button class="btn ghost" id="go-help">Jak správně vyfotit vzorek</button>
+  </section>
+
+  <!-- ══════════ ZPRACOVÁNÍ ══════════ -->
+  <section id="s-busy" class="hide">
+    <div class="card">
+      <div class="busy"><div class="spinner"></div><span id="busy-text">Počítám zrna…</span></div>
+    </div>
+  </section>
+
+  <!-- ══════════ VÝSLEDEK ══════════ -->
+  <section id="s-result" class="hide">
+
+    <div class="readout">
+      <div class="cell">
+        <div class="label">Počet zrn</div>
+        <div class="num" id="out-count">0</div>
+      </div>
+      <div class="cell htz">
+        <div class="label">HTZ</div>
+        <div class="num pending" id="out-htz">— <span class="unit">g</span></div>
+      </div>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div id="shots"></div>
+
+    <div id="warnings"></div>
+
+    <div class="shot" id="shot">
+      <canvas id="cv"></canvas>
+      <div class="full-bar">
+        <span class="cnt"><span id="full-count">0</span> zrn</span>
+        <button type="button" id="btn-full-close">Hotovo</button>
+      </div>
+    </div>
+
+    <div style="height:8px"></div>
+    <div class="legend">
+      <span><i style="background:#22D3EE"></i>volné zrno</span>
+      <span><i style="background:#F59E0B"></i>rozdělený slepenec</span>
+      <span><i style="background:#F0338D"></i>ruční oprava</span>
+    </div>
+
+    <div style="height:10px"></div>
+    <p class="hint">Něco nesedí? <strong>Klepni na zrno navíc</strong> a zmizí, <strong>klepni na nespočítané zrno</strong> a přibude.</p>
+
+    <div style="height:10px"></div>
+    <div class="btn-row">
+      <button class="btn secondary" id="btn-zoom">Přiblížit</button>
+      <button class="btn secondary" id="btn-undo">Vrátit opravu</button>
+    </div>
+
+    <div style="height:10px"></div>
+    <div class="btn-row">
+      <button class="btn secondary" id="btn-full">Celá obrazovka</button>
+      <button class="btn secondary" id="btn-mask">Co appka vidí</button>
+    </div>
+    <div style="height:8px"></div>
+    <div class="label" id="diag"></div>
+
+    <div style="height:18px"></div>
+
+    <div class="card">
+      <div class="field">
+        <label class="label" for="in-weight-fix">Hmotnost navážky (g)</label>
+        <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" placeholder="19,22" autocomplete="off">
+      </div>
+    </div>
+
+    <div style="height:16px"></div>
+    <div id="next-box" class="hide">
+      <div class="note info" id="next-hint"></div>
+      <div style="height:10px"></div>
+      <label class="btn" id="lbl-next">
+        <input type="file" id="in-next" accept="image/*" capture="environment">
+        <span id="next-label">📷 Vyfotit 2. fotku</span>
+      </label>
+      <div style="height:10px"></div>
+    </div>
+    <button class="btn" id="btn-save">Uložit měření</button>
+    <div style="height:10px"></div>
+    <button class="btn ghost" id="btn-cancel">Zahodit a začít znovu</button>
+  </section>
+
+  <!-- ══════════ VÝSLEDKY ══════════ -->
+  <section id="s-list" class="hide">
+    <div class="label">Uložená měření</div>
+    <div style="height:10px"></div>
+    <div id="list-rows"></div>
+    <div style="height:16px"></div>
+    <button class="btn secondary" id="btn-copy">Zkopírovat všechna měření</button>
+    <a class="btn secondary hide" id="station-csv" href="api/export.csv" download style="margin-top:10px; text-decoration:none">Stáhnout všechna měření ze stanice (CSV)</a>
+    <div style="height:10px"></div>
+    <textarea class="dump hide" id="dump" readonly></textarea>
+    <div style="height:10px"></div>
+    <button class="btn danger" id="btn-clear">Vymazat všechna měření</button>
+    <div style="height:14px"></div>
+    <button class="btn ghost" id="list-back">Zpět</button>
+  </section>
+
+  <!-- ══════════ NÁPOVĚDA ══════════ -->
+  <section id="s-help" class="hide">
+    <div class="card">
+      <div class="label">Jak vyfotit vzorek</div>
+      <ul class="steps" style="list-style:none">
+        <li><span class="n">✓</span><span><strong>Zrna od sebe.</strong> Dotýkající se zrna appka pozná jako slepenec a jejich počet už jen odhaduje. Rozhrnout je je vždycky lepší než spoléhat na odhad.</span></li>
+        <li><span class="n">✓</span><span><strong>Jen dno misky v záběru.</strong> Fotíš kolmo shora a zblízka, ať zrna vyplní snímek. Stěny misky a jejich stín do záběru nepatří.</span></li>
+        <li><span class="n">✓</span><span><strong>Celý vzorek najednou.</strong> Nic nesmí zůstat mimo záběr ani ležet přes okraj fotky — chybějící zrno posune HTZ nahoru.</span></li>
+        <li><span class="n">✓</span><span><strong>Rozptýlené světlo.</strong> Ostré stíny a odlesky matou rozpoznávání. Nejlepší je stín nebo zataženo.</span></li>
+        <li><span class="n">✓</span><span><strong>Čistá miska.</strong> Plevy, prach a úlomky se dají spočítat jako zrna. Misku předem vytři.</span></li>
+      </ul>
+      <p class="hint">Modrá miska funguje pro <strong>všechny plodiny</strong> — appka hledá všechno, co není modré. Proto se stejně dobře najde jantarová pšenice, žlutá kukuřice i černá řepka, a stín pod zrnem, který zůstává modrý, se nepočítá.</p>
+    </div>
+
+    <div style="height:14px"></div>
+
+    <div class="card">
+      <div class="label">Jak se HTZ počítá</div>
+      <div class="formula">HTZ = hmotnost vzorku ÷ počet zrn × 1000</div>
+      <p class="hint">Proto na přesnosti počtu záleží: <strong>chyba 1 % v počtu zrn je chyba 1 % v HTZ</strong>. Než měření uložíš, projeď fotku očima a značky doklepej.</p>
+      <p class="hint">Vzorek kolem <strong>10 g</strong> je dobrý kompromis — dost zrn na přesnost a pořád se vejdou na papír rozprostřené. Váž na dvě desetinná místa.</p>
+    </div>
+
+    <div style="height:16px"></div>
+    <button class="btn secondary" id="help-back">Zpět</button>
+  </section>
+
+</div>
+
+<!-- ══════════ LIŠTA ULOŽIT / ZRUŠIT ══════════ -->
+<div class="actbar" id="actbar" aria-hidden="true">
+  <div class="in">
+    <button type="button" class="btn glass-cancel" id="bar-cancel" tabindex="-1">Zrušit měření</button>
+    <button type="button" class="btn glass-save" id="bar-save" tabindex="-1">Uložit měření</button>
+  </div>
+</div>
+
+<!-- ══════════ FOTOAPARÁT ══════════ -->
+<div id="camera" class="cam hide" role="dialog" aria-label="Fotoaparát">
+  <video id="cam-video" playsinline muted autoplay></video>
+  <div class="cam-top">
+    <button type="button" class="cam-btn" id="cam-close">Zrušit</button>
+    <span class="t" id="cam-title">Fotka 1</span>
+    <label class="cam-btn">
+      <input type="file" id="cam-file" accept="image/*" capture="environment">
+      <span>Systémový foťák</span>
+    </label>
+  </div>
+  <div class="cam-msg hide" id="cam-msg"></div>
+  <button type="button" class="cam-shoot" id="cam-shoot" aria-label="Vyfotit"></button>
+  <div class="cam-keys">mezerník = vyfotit · Esc = zpět</div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════
+   Screen switching
+   ═══════════════════════════════════════════════════════════ */
+const SCREENS = ["s-home", "s-busy", "s-result", "s-list", "s-help"];
+function show(id) {
+  SCREENS.forEach(s => document.getElementById(s).classList.toggle("hide", s !== id));
+  window.scrollTo(0, 0);
+  if (typeof updateBar === "function") updateBar();
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Storage
+   ═══════════════════════════════════════════════════════════ */
+const KEY = "htz-pocitadlo-v1";
+let saved = [];
+try { saved = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { saved = []; }
+
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* private mode — keep going in memory */ }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Crops
+   The detector calibrates itself from each photo, so the crop never
+   drives the segmentation. What it drives is guidance and guardrails:
+   how much to weigh out (a 30x span between rape and soya), which
+   background to use, how fine the working resolution has to be for
+   2 mm seeds, and which HTZ result is physically believable.
+   ═══════════════════════════════════════════════════════════ */
+const CROPS = {
+  wheat:  { name: "Pšenice",  scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
+  barley: { name: "Ječmen",   scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
+  rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
+  soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000 },
+  maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
+  other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
+};
+const CROP_KEY = "htz-pocitadlo-crop";
+let crop = localStorage.getItem(CROP_KEY) || "wheat";
+if (!CROPS[crop]) crop = "wheat";
+
+function renderCrops() {
+  const box = document.getElementById("crops");
+  box.innerHTML = "";
+  Object.keys(CROPS).forEach(k => {
+    const b = document.createElement("button");
+    b.className = "crop";
+    b.type = "button";
+    b.textContent = CROPS[k].name;
+    b.setAttribute("aria-pressed", String(k === crop));
+    b.addEventListener("click", () => {
+      crop = k;
+      try { localStorage.setItem(CROP_KEY, k); } catch (e) { /* ignore */ }
+      renderCrops();
+    });
+    box.append(b);
+  });
+  const c = CROPS[crop];
+  document.getElementById("crop-tip").innerHTML =
+    "Nasyp <b>" + c.scoop + "</b>" + (c.approx ? " (" + c.approx + ")" : "") +
+    ", <b>zvaž ji</b> a rozprostři v misce do plochy zhruba <b>" + c.area +
+    "</b>. Přesnou hmotnost trefovat nemusíš — stačí ji přesně zvážit." +
+    (c.photos > 1 ? " Když bude volně ležet aspoň polovina zrn, stačí <b>jedna fotka</b>; jinak tě appka vyzve k druhé." : "");
+}
+
+/* ══════════════════════════════════════════════════════════════
+   Number helpers — Czech keyboards type a comma
+   ═══════════════════════════════════════════════════════════ */
+function parseNum(raw) {
+  const t = String(raw || "").trim().replace(",", ".");
+  if (!t) return NaN;
+  const v = parseFloat(t);
+  return isFinite(v) ? v : NaN;
+}
+const fmt1 = v => v.toFixed(1).replace(".", ",");
+const fmt2 = v => v.toFixed(2).replace(".", ",");
+
+/* ══════════════════════════════════════════════════════════════
+   Image analysis
+   ═══════════════════════════════════════════════════════════ */
+async function loadBitmap(file) {
+  try { return await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch (e) { return await createImageBitmap(file); }
+}
+
+/* ── counting pipeline continues in its own script, see below ── */
+</script>
+
+<!-- The counting pipeline is kept as one standalone script so the very same
+     source text can be handed to a Web Worker. On a phone the count takes
+     seconds, and seconds of work on the main thread freeze the page. -->
+<script id="pipeline">
+"use strict";
+
+let PROGRESS = null;
+
+/** Median of a numeric array (copies, so the caller's order survives). */
+function median(arr) {
+  if (!arr.length) return 0;
+  const a = Float64Array.from(arr).sort();
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+function otsu(hist, total) {
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sumB = 0, wB = 0, best = -1, thr = 0;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB, mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > best) { best = between; thr = t; }
+  }
+  return thr;
+}
+
+/** 3x3 box blur, separable, on a Uint8 map. */
+function blur3(src, w, h) {
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    for (let x = 0; x < w; x++) {
+      const a = src[r + (x > 0 ? x - 1 : 0)];
+      const b = src[r + x];
+      const c = src[r + (x < w - 1 ? x + 1 : w - 1)];
+      tmp[r + x] = (a + b + c) / 3;
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    const up = (y > 0 ? y - 1 : 0) * w, mid = y * w, dn = (y < h - 1 ? y + 1 : h - 1) * w;
+    for (let x = 0; x < w; x++) out[mid + x] = (tmp[up + x] + tmp[mid + x] + tmp[dn + x]) / 3;
+  }
+  return out;
+}
+
+/** 3x3 square erosion / dilation on a binary Uint8 mask (0/1), separable. */
+function morph(mask, w, h, dilate) {
+  const pick = dilate ? Math.max : Math.min;
+  const edge = dilate ? 0 : 1;
+  const tmp = new Uint8Array(w * h), out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    for (let x = 0; x < w; x++) {
+      const a = x > 0 ? mask[r + x - 1] : edge;
+      const c = x < w - 1 ? mask[r + x + 1] : edge;
+      tmp[r + x] = pick(a, mask[r + x], c);
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    const mid = y * w;
+    const up = y > 0 ? (y - 1) * w : -1, dn = y < h - 1 ? (y + 1) * w : -1;
+    for (let x = 0; x < w; x++) {
+      const a = up >= 0 ? tmp[up + x] : edge;
+      const c = dn >= 0 ? tmp[dn + x] : edge;
+      out[mid + x] = pick(a, tmp[mid + x], c);
+    }
+  }
+  return out;
+}
+
+/**
+ * Fill small background pockets fully enclosed by foreground (glints inside a
+ * grain). Only small ones: the gap in the middle of a ring of touching grains is
+ * enclosed too, and filling it turned a dozen maize kernels into one shape the
+ * size of twenty.
+ */
+function fillHoles(mask, w, h, maxHole) {
+  const seen = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  let sp = 0;
+  const pushIf = i => { if (!mask[i] && !seen[i]) { seen[i] = 1; stack[sp++] = i; } };
+  for (let x = 0; x < w; x++) { pushIf(x); pushIf((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { pushIf(y * w); pushIf(y * w + w - 1); }
+  while (sp > 0) {
+    const i = stack[--sp], x = i % w, y = (i / w) | 0;
+    if (x > 0) pushIf(i - 1);
+    if (x < w - 1) pushIf(i + 1);
+    if (y > 0) pushIf(i - w);
+    if (y < h - 1) pushIf(i + w);
+  }
+  // what is left unseen are the enclosed pockets — measure each before filling
+  const pocket = new Int32Array(w * h);
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] || seen[i]) continue;
+    let n = 0;
+    seen[i] = 1; stack[sp++] = i;
+    while (sp > 0) {
+      const j = stack[--sp], x = j % w;
+      pocket[n++] = j;
+      if (x > 0 && !mask[j - 1] && !seen[j - 1]) { seen[j - 1] = 1; stack[sp++] = j - 1; }
+      if (x < w - 1 && !mask[j + 1] && !seen[j + 1]) { seen[j + 1] = 1; stack[sp++] = j + 1; }
+      if (j >= w && !mask[j - w] && !seen[j - w]) { seen[j - w] = 1; stack[sp++] = j - w; }
+      if (j + w < mask.length && !mask[j + w] && !seen[j + w]) { seen[j + w] = 1; stack[sp++] = j + w; }
+    }
+    if (n <= maxHole) for (let k = 0; k < n; k++) mask[pocket[k]] = 1;
+  }
+  return mask;
+}
+
+/**
+ * Exact squared Euclidean distance transform (Felzenszwalb & Huttenlocher):
+ * for every grain pixel, how far it is from the nearest background pixel.
+ * A grain's centre is the local maximum of this surface, which is what lets two
+ * touching grains be told apart by shape instead of by area.
+ */
+function edt1d(f, n, d, v, z) {
+  let k = 0;
+  v[0] = 0; z[0] = -Infinity; z[1] = Infinity;
+  for (let q = 1; q < n; q++) {
+    let s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    while (s <= z[k]) {
+      k--;
+      s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+    }
+    k++; v[k] = q; z[k] = s; z[k + 1] = Infinity;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[k + 1] < q) k++;
+    const dq = q - v[k];
+    d[q] = dq * dq + f[v[k]];
+  }
+}
+
+function edt(mask, w, h) {
+  // The column pass is a plain two-sweep walk rather than the parabola method:
+  // for a binary image it gives the same answer, and it keeps the working buffer
+  // Float32 with only small finite values in it. Seeding a Float64 buffer with
+  // infinities instead cost 50 MB on a rape-seed photo, enough to end the tab on
+  // a cheaper phone.
+  const CAP = w + h;
+  const g = new Float32Array(w * h);
+  for (let x = 0; x < w; x++) {
+    let d = CAP;
+    for (let y = 0; y < h; y++) { const i = y * w + x; d = mask[i] ? d + 1 : 0; g[i] = d; }
+    d = CAP;
+    for (let y = h - 1; y >= 0; y--) {
+      const i = y * w + x;
+      d = mask[i] ? d + 1 : 0;
+      const v0 = d < g[i] ? d : g[i];
+      g[i] = v0 * v0;
+    }
+  }
+
+  const n = Math.max(w, h);
+  const f = new Float64Array(n), d2 = new Float64Array(n);
+  const v = new Int32Array(n), z = new Float64Array(n + 1);
+  for (let y = 0; y < h; y++) {                       // rows
+    const r = y * w;
+    for (let x = 0; x < w; x++) f[x] = g[r + x];
+    edt1d(f, w, d2, v, z);
+    for (let x = 0; x < w; x++) g[r + x] = Math.sqrt(d2[x]);
+  }
+  return g;
+}
+
+/** 3x3 box blur on a float map, repeated. Flattens the ridge that runs along an
+ *  elongated grain into a single maximum, so one grain yields one peak. */
+function blurF(src, w, h, times) {
+  let cur = src;
+  const tmp = new Float32Array(w * h);
+  let out = new Float32Array(w * h);          // two buffers, reused every pass
+  for (let t = 0; t < times; t++) {
+    for (let y = 0; y < h; y++) {
+      const r = y * w;
+      for (let x = 0; x < w; x++) {
+        tmp[r + x] = (cur[r + (x > 0 ? x - 1 : 0)] + cur[r + x] + cur[r + (x < w - 1 ? x + 1 : w - 1)]) / 3;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      const up = (y > 0 ? y - 1 : 0) * w, mid = y * w, dn = (y < h - 1 ? y + 1 : h - 1) * w;
+      for (let x = 0; x < w; x++) out[mid + x] = (tmp[up + x] + tmp[mid + x] + tmp[dn + x]) / 3;
+    }
+    if (t + 1 < times) { const swap = cur === src ? new Float32Array(w * h) : cur; cur = out; out = swap; }
+    else cur = out;
+  }
+  return cur;
+}
+
+/** 8-connected component labelling. Returns per-blob area / centroid / bbox. */
+function components(mask, w, h) {
+  const label = new Int32Array(w * h).fill(-1);
+  const stack = new Int32Array(w * h);
+  const blobs = [];
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || label[start] !== -1) continue;
+    const id = blobs.length;
+    let sp = 0;
+    stack[sp++] = start;
+    label[start] = id;
+    let area = 0, sx = 0, sy = 0;
+    let x0 = w, y0 = h, x1 = 0, y1 = 0;
+    while (sp > 0) {
+      const i = stack[--sp], x = i % w, y = (i / w) | 0;
+      area++; sx += x; sy += y;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= h) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= w) continue;
+          const j = ny * w + nx;
+          if (mask[j] && label[j] === -1) { label[j] = id; stack[sp++] = j; }
+        }
+      }
+    }
+    blobs.push({ id, area, cx: sx / area, cy: sy / area, x0, y0, x1, y1,
+                 border: x0 === 0 || y0 === 0 || x1 === w - 1 || y1 === h - 1 });
+  }
+  return { blobs, label };
+}
+
+/**
+ * Which blobs lie outside the tray.
+ *
+ * The tray floor is the largest connected stretch of background. A grain lies
+ * on it, so most of the background around a grain's outline is tray floor.
+ * Clothing, a table edge or a box of seed at the edge of the shot is ringed by
+ * other things instead — on one maize photo a fold of trousers below the tray
+ * came out as five grains. Testing the edge of the frame alone does not catch
+ * that: the fold never touched the edge.
+ */
+function outsideTray(mask, label, nBlobs, w, h) {
+  const n = w * h;
+  const bg = new Int32Array(n).fill(-1);
+  const stack = new Int32Array(n);
+  let tray = -1, trayArea = 0, id = 0;
+  for (let s = 0; s < n; s++) {
+    if (mask[s] || bg[s] !== -1) continue;
+    let sp = 0, area = 0;
+    stack[sp++] = s; bg[s] = id;
+    while (sp > 0) {
+      const i = stack[--sp], x = i % w;
+      area++;
+      if (x > 0 && !mask[i - 1] && bg[i - 1] === -1) { bg[i - 1] = id; stack[sp++] = i - 1; }
+      if (x < w - 1 && !mask[i + 1] && bg[i + 1] === -1) { bg[i + 1] = id; stack[sp++] = i + 1; }
+      if (i >= w && !mask[i - w] && bg[i - w] === -1) { bg[i - w] = id; stack[sp++] = i - w; }
+      if (i + w < n && !mask[i + w] && bg[i + w] === -1) { bg[i + w] = id; stack[sp++] = i + w; }
+    }
+    if (area > trayArea) { trayArea = area; tray = id; }
+    id++;
+  }
+
+  const onTray = new Uint32Array(nBlobs), edge = new Uint32Array(nBlobs);
+  for (let i = 0; i < n; i++) {
+    if (mask[i]) continue;
+    const x = i % w;
+    const nb = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+    for (const j of nb) {
+      if (j < 0 || j >= n || !mask[j]) continue;
+      const L = label[j];
+      edge[L]++;
+      if (bg[i] === tray) onTray[L]++;
+    }
+  }
+  const off = new Uint8Array(nBlobs);
+  for (let b = 0; b < nBlobs; b++) off[b] = edge[b] > 0 && onTray[b] < edge[b] * 0.5 ? 1 : 0;
+  return off;
+}
+
+/**
+ * How much less blue each pixel is than the blue tray.
+ *
+ * Measured as a ratio to the pixel's own brightness, so darkening cancels out:
+ * the shadow a grain throws is still tray-blue, only dimmer, and stays tray. The
+ * plain colour distance used before counted that shadow as part of the grain,
+ * which glued neighbours together and split lone kernels in two. Yellow maize,
+ * amber wheat and black sunflower all score far from the tray, white glints on a
+ * grain too, so they no longer punch holes into it.
+ * Returns null when the tray is not blue enough for this to mean anything.
+ */
+function blueField(px, w, h) {
+  const n = w * h, ratio = new Float32Array(n);
+  const hist = new Uint32Array(512);
+  for (let i = 0, p = 0; i < n; i++, p += 4) {
+    const r = px[p], g = px[p + 1], b = px[p + 2];
+    const v = (b - Math.max(r, g * 0.5)) / (r + g + b + 40);
+    ratio[i] = v;
+    hist[Math.max(0, Math.min(511, Math.round((v + 1) * 255)))]++;
+  }
+  let acc = 0, tray = 0;
+  for (let k = 0; k < 512; k++) { acc += hist[k]; if (acc > n / 2) { tray = k / 255 - 1; break; } }
+  if (tray < 0.08) return null;
+
+  const dist = new Float32Array(n);
+  let maxD = 0;
+  for (let i = 0; i < n; i++) {
+    const d = Math.max(0, tray - ratio[i]) * 300;
+    dist[i] = d;
+    if (d > maxD) maxD = d;
+  }
+  return { dist, maxD };
+}
+
+/**
+ * Local background colour, as a coarse grid of tile medians.
+ * Fallback for a tray that is not blue. A single background colour for the
+ * whole frame cannot describe a deep tray whose wall throws a shadow, so each
+ * tile's median stands for the floor right there, shadow included.
+ */
+function backgroundField(px, w, h) {
+  const bs = Math.max(40, Math.round(Math.min(w, h) / 18));
+  const nbx = Math.ceil(w / bs), nby = Math.ceil(h / bs);
+  const R = new Float32Array(nbx * nby), G = new Float32Array(nbx * nby), B = new Float32Array(nbx * nby);
+  const hr = new Uint32Array(256), hg = new Uint32Array(256), hb = new Uint32Array(256);
+
+  for (let by = 0; by < nby; by++) {
+    for (let bx = 0; bx < nbx; bx++) {
+      hr.fill(0); hg.fill(0); hb.fill(0);
+      const x1 = Math.min(w, (bx + 1) * bs), y1 = Math.min(h, (by + 1) * bs);
+      let n = 0;
+      for (let y = by * bs; y < y1; y += 2) {
+        for (let x = bx * bs; x < x1; x += 2) {
+          const i = (y * w + x) * 4;
+          hr[px[i]]++; hg[px[i + 1]]++; hb[px[i + 2]]++;
+          n++;
+        }
+      }
+      const mid = n >> 1;
+      const pick = hist => { let acc = 0; for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > mid) return v; } return 128; };
+      const k = by * nbx + bx;
+      R[k] = pick(hr); G[k] = pick(hg); B[k] = pick(hb);
+    }
+  }
+  return { bs, nbx, nby, R, G, B };
+}
+
+/**
+ * Colour distance from the local background, per pixel.
+ * The bilinear weights along x are the same on every row, so they are computed
+ * once up front and the per-pixel work collapses to multiply-adds.
+ */
+function distanceField(px, f, w, h) {
+  const { bs, nbx, nby, R, G, B } = f;
+  const bx0 = new Int32Array(w), bx1 = new Int32Array(w), txw = new Float32Array(w);
+  for (let x = 0; x < w; x++) {
+    const fx = Math.min(nbx - 1, Math.max(0, x / bs - 0.5));
+    const i0 = Math.floor(fx);
+    bx0[x] = i0;
+    bx1[x] = Math.min(nbx - 1, i0 + 1);
+    txw[x] = fx - i0;
+  }
+
+  const dist = new Float32Array(w * h);
+  let maxD = 0;
+  for (let y = 0, i = 0; y < h; y++) {
+    const fy = Math.min(nby - 1, Math.max(0, y / bs - 0.5));
+    const j0 = Math.floor(fy);
+    const r0 = j0 * nbx, r1 = Math.min(nby - 1, j0 + 1) * nbx;
+    const ty = fy - j0, sy = 1 - ty;
+    for (let x = 0; x < w; x++, i++) {
+      const a = bx0[x], b = bx1[x], t = txw[x], s = 1 - t;
+      const br = (R[r0 + a] * s + R[r0 + b] * t) * sy + (R[r1 + a] * s + R[r1 + b] * t) * ty;
+      const bgc = (G[r0 + a] * s + G[r0 + b] * t) * sy + (G[r1 + a] * s + G[r1 + b] * t) * ty;
+      const bb = (B[r0 + a] * s + B[r0 + b] * t) * sy + (B[r1 + a] * s + B[r1 + b] * t) * ty;
+      const p = i * 4;
+      const dr = px[p] - br, dg = px[p + 1] - bgc, db = px[p + 2] - bb;
+      const d = Math.sqrt(dr * dr + dg * dg + db * db);
+      dist[i] = d;
+      if (d > maxD) maxD = d;
+    }
+  }
+  return { dist, maxD };
+}
+
+/**
+ * Segment grains out of a photo.
+ * On a blue tray every pixel is scored by how much less blue it is than the
+ * tray; on any other background, by colour distance from the local background.
+ */
+function segment(imgData, w, h) {
+  const px = imgData.data;
+  if (typeof PROGRESS === "function") PROGRESS("Odečítám barvu misky…");
+
+  const field = blueField(px, w, h) || distanceField(px, backgroundField(px, w, h), w, h);
+  const { dist, maxD } = field;
+  if (maxD < 24) return { fail: "contrast" };
+
+  const norm = new Uint8Array(w * h);
+  const k = 255 / maxD;
+  for (let i = 0; i < dist.length; i++) norm[i] = Math.min(255, Math.round(dist[i] * k));
+
+  const smooth = blur3(norm, w, h);
+  const h2 = new Uint32Array(256);
+  for (let i = 0; i < smooth.length; i++) h2[smooth[i]]++;
+  const thr = otsu(h2, smooth.length);
+
+  let mask = new Uint8Array(w * h);
+  let fg = 0;
+  for (let i = 0; i < mask.length; i++) if (smooth[i] > thr) { mask[i] = 1; fg++; }
+
+  const cover = fg / mask.length;
+  if (cover > 0.72) return { fail: "cover" };
+
+  mask = fillHoles(mask, w, h, Math.max(20, (w * h) / 20000));
+  mask = morph(mask, w, h, false);   // erode — snaps thin bridges, drops specks
+  mask = morph(mask, w, h, true);    // dilate — restore grain size
+
+  if (typeof PROGRESS === "function") PROGRESS("Hledám zrna…");
+  const cc = components(mask, w, h);
+  let blobs = cc.blobs;
+  if (!blobs.length) return { fail: "empty" };
+
+  const offTray = outsideTray(mask, cc.label, blobs.length, w, h);
+
+  // --- drop dust: first pass median over anything above a floor area
+  const floor = Math.max(12, (w * h) / 90000);
+  let big = blobs.filter(b => b.area >= floor);
+  if (!big.length) return { fail: "empty" };
+  let med = median(big.map(b => b.area));
+
+  // The tray wall and the shadow it throws show up as one sprawling shape glued
+  // to the edge of the frame. Counted as a cluster it would invent hundreds of
+  // grains, so anything border-bound and vastly oversized is thrown away.
+  let rim = 0;
+  const kept = big.filter(b => {
+    // A third of a grain is chaff or a fleck on the tray rim, not a grain: on
+    // ten checked photos every such blob was one, while the smallest real
+    // kernels and halves measured 0.38 of a grain and up.
+    if (b.area < Math.max(floor, med * 0.35)) return false;
+    if (offTray[b.id]) { rim++; return false; }
+    if (b.border && b.area > med * 8) { rim++; return false; }
+    return true;
+  });
+  if (!kept.length) return { fail: "empty" };
+  med = median(kept.map(b => b.area));
+
+  return { blobs: kept, med, cover, rim, mask, label: cc.label, w, h };
+}
+
+/**
+ * Blobs → one mark per grain.
+ *
+ * Two independent counts per blob, and the larger one wins:
+ *  - peaks of the distance transform — how many separate centres the shape has;
+ *  - area — how many typical single grains fit into it.
+ * Peaks alone undercount a tight clump: kernels pressed together side by side
+ * leave no neck between them, and on a maize photo they found 143 of ~180.
+ * Area alone overcounts one plump grain as two, which is why it is rounded
+ * down hard and only ever adds grains the peaks missed.
+ */
+const PEAK_MIN_FRAC = 0.52;   // a peak must be this deep inside the shape, relative to a typical grain
+const PEAK_DIST_FRAC = 0.85;  // never put two centres closer together than this
+const SADDLE_FRAC = 0.10;     // how deep the valley between two centres must be
+const AREA_ROUND = 0.35;      // 1.65 grains of area still counts as one
+
+/**
+ * Do two candidate centres belong to the same grain?
+ * What distinguishes two touching grains from one long one is a valley: at the
+ * neck where two grains meet the distance map dips, along a single grain not.
+ */
+function sameGrain(dist, w, ax, ay, bx, by, drop) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay)));
+  let low = Infinity;
+  for (let s = 0; s <= steps; s++) {
+    const x = Math.round(ax + (bx - ax) * s / steps);
+    const y = Math.round(ay + (by - ay) * s / steps);
+    const d = dist[y * w + x];
+    if (d < low) low = d;
+  }
+  const lo = Math.min(dist[ay * w + ax], dist[by * w + bx]);
+  return low > lo - drop;   // no real dip on the way across — one grain
+}
+
+/** Spread n centres over a blob's pixels: the peaks found stay as seeds, the
+ *  missing ones start at the pixels farthest from any seed, then k-means. */
+function spreadCentres(pix, from, to, w, seeds, n) {
+  const step = Math.max(1, Math.floor((to - from) / 3000));
+  const xs = [], ys = [];
+  for (let k = from; k < to; k += step) { xs.push(pix[k] % w); ys.push((pix[k] / w) | 0); }
+  const c = seeds.map(p => ({ x: p.x, y: p.y }));
+  while (c.length < n) {
+    let far = 0, best = -1;
+    for (let i = 0; i < xs.length; i++) {
+      let m = Infinity;
+      for (const q of c) { const d = (q.x - xs[i]) ** 2 + (q.y - ys[i]) ** 2; if (d < m) m = d; }
+      if (m > best) { best = m; far = i; }
+    }
+    c.push({ x: xs[far], y: ys[far] });
+  }
+  const sx = new Float64Array(n), sy = new Float64Array(n), cnt = new Int32Array(n);
+  for (let it = 0; it < 10; it++) {
+    sx.fill(0); sy.fill(0); cnt.fill(0);
+    for (let i = 0; i < xs.length; i++) {
+      let bi = 0, bd = Infinity;
+      for (let j = 0; j < n; j++) { const d = (c[j].x - xs[i]) ** 2 + (c[j].y - ys[i]) ** 2; if (d < bd) { bd = d; bi = j; } }
+      sx[bi] += xs[i]; sy[bi] += ys[i]; cnt[bi]++;
+    }
+    for (let j = 0; j < n; j++) if (cnt[j]) { c[j].x = sx[j] / cnt[j]; c[j].y = sy[j] / cnt[j]; }
+  }
+  return c;
+}
+
+function toMarks(seg) {
+  const { blobs: kept, med, label, w, h, mask } = seg;
+  if (typeof PROGRESS === "function") PROGRESS("Rozděluji slepená zrna…");
+
+  const dist = blurF(edt(mask, w, h), w, h, 2);
+
+  // pixels grouped by blob, via counting sort on the label map
+  const maxId = kept.reduce((m, b) => Math.max(m, b.id), 0);
+  const slot = new Int32Array(maxId + 2);
+  const wanted = new Uint8Array(maxId + 1);
+  for (const b of kept) wanted[b.id] = 1;
+  for (let i = 0; i < label.length; i++) {
+    const L = label[i];
+    if (L >= 0 && wanted[L]) slot[L + 1]++;
+  }
+  for (let k = 1; k < slot.length; k++) slot[k] += slot[k - 1];
+  const starts = Int32Array.from(slot);
+  const pix = new Int32Array(slot[slot.length - 1]);
+  const cursor = Int32Array.from(slot);
+  for (let i = 0; i < label.length; i++) {
+    const L = label[i];
+    if (L >= 0 && wanted[L]) pix[cursor[L]++] = i;
+  }
+
+  // a typical grain's half-thickness, taken from blobs that are plainly single
+  const singles = kept.filter(b => b.area > med * 0.7 && b.area < med * 1.3);
+  const radii = (singles.length >= 5 ? singles : kept).map(b => {
+    let mx = 0;
+    for (let k = starts[b.id]; k < starts[b.id + 1]; k++) {
+      const d = dist[pix[k]];
+      if (d > mx) mx = d;
+    }
+    return mx;
+  });
+  const r0 = Math.max(1.5, median(radii));
+  const minPeak = r0 * PEAK_MIN_FRAC;
+  const minDist = Math.max(2, r0 * PEAK_DIST_FRAC);
+  const minDist2 = minDist * minDist;
+  const drop = Math.max(0.6, r0 * SADDLE_FRAC);
+
+  // pass 1 — centres by shape
+  const peaksOf = new Map();
+  for (const b of kept) {
+    const from = starts[b.id], to = starts[b.id + 1];
+    // Only local maxima are candidates. Testing every pixel deep enough inside
+    // the shape walked a line to each accepted peak for tens of thousands of
+    // pixels per clump — 22 s on a desktop for one maize photo.
+    const cand = [];
+    for (let k = from; k < to; k++) {
+      const i = pix[k];
+      const d = dist[i];
+      if (d < minPeak) continue;
+      const x = i % w, y = (i / w) | 0;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) continue;
+      if (d < dist[i - 1] || d < dist[i + 1] || d < dist[i - w] || d < dist[i + w] ||
+          d < dist[i - w - 1] || d < dist[i - w + 1] || d < dist[i + w - 1] || d < dist[i + w + 1]) continue;
+      cand.push(i);
+    }
+    cand.sort((p, q) => dist[q] - dist[p]);
+
+    const peaks = [];
+    for (const i of cand) {
+      const x = i % w, y = (i / w) | 0;
+      let ok = true;
+      for (const p of peaks) {
+        const dx = p.x - x, dy = p.y - y;
+        if (dx * dx + dy * dy < minDist2 || sameGrain(dist, w, x, y, p.x, p.y, drop)) { ok = false; break; }
+      }
+      if (ok) peaks.push({ x, y });
+    }
+    if (!peaks.length) peaks.push({ x: b.cx, y: b.cy });   // too thin to peak — still one grain
+    peaksOf.set(b.id, peaks);
+  }
+
+  // A single grain's area, from blobs the peak search saw as exactly one grain.
+  // The band is tight on purpose: broken kernels and tip caps are lone blobs
+  // too, and letting them in shrank the unit enough to count a maize sample of
+  // 175 as 184.
+  const lone = kept.filter(b => peaksOf.get(b.id).length === 1 && b.area > med * 0.75 && b.area < med * 1.4);
+  const unit = lone.length >= 5 ? median(lone.map(b => b.area)) : med;
+
+  // pass 2 — top up from area where the shape gave too few centres
+  const marks = [];
+  let split = 0, border = 0;
+  for (const b of kept) {
+    let peaks = peaksOf.get(b.id);
+    const byArea = Math.floor(b.area / unit + AREA_ROUND);
+    if (byArea > peaks.length) peaks = spreadCentres(pix, starts[b.id], starts[b.id + 1], w, peaks, byArea);
+
+    if (peaks.length > 1) split += peaks.length;
+    if (b.border) border++;
+    for (const p of peaks) {
+      marks.push({ x: p.x, y: p.y, n: 1, kind: peaks.length > 1 ? "split" : "one" });
+    }
+  }
+
+  return { marks, clustered: split, border, capped: 0, r0 };
+}
+
+/* A Worker has no document — that is how this one source knows it is the
+   background copy and should wait for images to count rather than draw a UI. */
+if (typeof document === "undefined") {
+  self.onmessage = function (e) {
+    PROGRESS = msg => self.postMessage({ progress: msg });
+    const seg = segment({ data: new Uint8ClampedArray(e.data.buf) }, e.data.w, e.data.h);
+    if (seg.fail) { self.postMessage({ fail: seg.fail }); return; }
+    const res = toMarks(seg);
+    // The mask goes back too, so the operator (and whoever is debugging a bad
+    // count) can see exactly what the app took for grain and what for tray.
+    self.postMessage({
+      marks: res.marks, clustered: res.clustered, border: res.border,
+      r0: res.r0, rim: seg.rim || 0,
+      blobs: seg.blobs.length, med: seg.med, cover: seg.cover,
+      mask: seg.mask.buffer
+    }, [seg.mask.buffer]);
+  };
+}
+</script>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════════════════════
+   Result screen state
+   ═══════════════════════════════════════════════════════════ */
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let photo = document.createElement("canvas");
+
+let marks = [];
+let grainR = 10;
+let undoStack = [];
+
+function total() { return marks.reduce((s, m) => s + m.n, 0); }
+
+/* ══════════════════════════════════════════════════════════════
+   Several photos of one sample
+   The sample is shaken and shot again, and the count is taken from the
+   photo on which the most grains lie free. Every miscount seen so far was an
+   overcount in a clump, so the better-spread photo is the closer one: on
+   four maize samples of 250 it was within one grain every time, while the
+   average of the two drifted up to four grains high.
+   ═══════════════════════════════════════════════════════════ */
+let shots = [], cur = -1;
+const FREE_MIN = 0.2;      // below this share of free grains a photo counts high
+const SPREAD_MAX = 0.04;   // two photos of one sample further apart than this disagree
+// A photo this well spread is trusted on its own: every checked photo above
+// 40 % free was within one grain of the hand count.
+const FREE_DONE = 0.5;
+
+function shotCount(s) { return s.marks.reduce((a, m) => a + m.n, 0); }
+
+function bestShot() {
+  let b = -1;
+  shots.forEach((s, i) => { if (b < 0 || s.free > shots[b].free) b = i; });
+  return b;
+}
+
+function spread() {
+  if (shots.length < 2) return 0;
+  const c = shots.map(shotCount);
+  return (Math.max(...c) - Math.min(...c)) / Math.max(1, Math.min(...c));
+}
+
+/** How many photos this sample needs: none more once one is spread well
+ *  enough, else the crop's default, plus one more when the first two are both
+ *  crowded or do not agree. Never more than three. */
+function needed() {
+  const want = CROPS[crop].photos || 1;
+  if (shots.length && shots[bestShot()].free >= FREE_DONE) return shots.length;
+  if (want < 2 || shots.length < 2) return want;
+  const b = bestShot();
+  return (shots[b].free < FREE_MIN || spread() > SPREAD_MAX) ? 3 : 2;
+}
+
+function usedCount() {
+  const b = bestShot();
+  return b < 0 ? 0 : shotCount(shots[b]);
+}
+
+function showShot(i) {
+  cur = i;
+  const s = shots[i];
+  photo = s.photo;
+  marks = s.marks;
+  undoStack = s.undo;
+  grainR = s.grainR;
+  maskCanvas = s.mask;
+  showMask = false;
+  document.getElementById("btn-mask").textContent = "Co appka vidí";
+  cv.width = photo.width; cv.height = photo.height;
+  document.getElementById("diag").textContent = s.diag;
+  document.getElementById("warnings").innerHTML = s.warn;
+  draw();
+}
+
+function renderShots() {
+  const box = document.getElementById("shots");
+  box.innerHTML = "";
+  const need = needed();
+  if (shots.length > 1 || need > 1) {
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    const b = bestShot();
+    shots.forEach((s, i) => {
+      const row = document.createElement("div");
+      row.className = "row photo-row" + (i === cur ? " cur" : "");
+      const who = document.createElement("div");
+      who.className = "who";
+      const t = document.createElement("b");
+      t.textContent = "Fotka " + (i + 1) + " · " + shotCount(s) + " zrn";
+      const sub = document.createElement("span");
+      sub.textContent = "volně " + Math.round(s.free * 100) + " % zrn" + (i === cur ? " · zobrazená" : "");
+      who.append(t, sub);
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = i === b ? "✓ použije se" : "";
+      row.append(who, tag);
+      row.addEventListener("click", () => { showShot(i); renderShots(); });
+      rows.append(row);
+    });
+    box.append(rows);
+    const gap = document.createElement("div");
+    gap.style.height = "14px";
+    box.append(gap);
+  }
+
+  // the next photo, if this sample still needs one
+  const nb = document.getElementById("next-box");
+  const save = document.getElementById("btn-save");
+  const more = shots.length < need;
+  nb.classList.toggle("hide", !more);
+  if (more) {
+    const k = shots.length + 1;
+    document.getElementById("next-label").textContent =
+      shots.length ? "📷 Vyfotit " + k + ". fotku" : "📷 Vyfotit znovu";
+    let why = "";
+    if (shots.length === 1) {
+      why = "<b>Protřes misku</b>, zrna znovu rozhrň po celém dně a vyfoť ještě jednou. " +
+            "Výsledek se vezme z fotky, na které leží víc zrn volně.";
+    } else if (shots.length === 2) {
+      const sp = spread();
+      why = (sp > SPREAD_MAX
+              ? "Fotky se liší o <b>" + fmt1(sp * 100) + " %</b>. "
+              : "Na obou fotkách leží zrna moc u sebe. ") +
+            "<b>Rozhrň zrna víc</b> a vyfoť třetí fotku.";
+    } else {
+      why = "Fotku se nepodařilo spočítat. Vyfoť ji znovu.";
+    }
+    document.getElementById("next-hint").innerHTML = why;
+  } else if (shots.length >= 3 && shots[bestShot()].free < FREE_MIN) {
+    const n = document.createElement("div");
+    n.className = "note bad";
+    n.innerHTML = "Ani na třetí fotce neleží zrna dost volně — počet může být o pár procent vyšší než skutečnost.";
+    box.append(n);
+    const gap = document.createElement("div");
+    gap.style.height = "14px";
+    box.append(gap);
+  }
+  save.textContent = more && shots.length ? "Uložit bez další fotky" : "Uložit měření";
+  save.classList.toggle("secondary", more);
+  updateBar();
+}
+
+/* The bottom bar is up only on a finished sample: result on screen, no
+   further photo wanted, nothing covering it. While a photo is still wanted
+   the page leads to the camera instead. */
+function updateBar() {
+  const bar = document.getElementById("actbar");
+  const up = !document.getElementById("s-result").classList.contains("hide") &&
+             shots.length > 0 && shots.length >= needed() &&
+             !document.getElementById("btn-save").disabled;
+  bar.classList.toggle("up", up);
+  bar.setAttribute("aria-hidden", String(!up));
+  document.body.classList.toggle("bar-up", up);
+  // one set of Save / Cancel on screen at a time
+  document.getElementById("btn-save").classList.toggle("hide", up);
+  document.getElementById("btn-cancel").classList.toggle("hide", up);
+}
+document.getElementById("bar-save").addEventListener("click", () => document.getElementById("btn-save").click());
+document.getElementById("bar-cancel").addEventListener("click", () => document.getElementById("btn-cancel").click());
+
+/* Diagnostic view: paint the detected grain mask over the photo. A count that is
+   wildly off is almost always the mask being wrong — shadows, a reflection on the
+   tray, or dirt read as grain — and no amount of staring at the dots shows that. */
+let maskCanvas = null, showMask = false;
+
+function buildMaskCanvas(buf, w, h) {
+  const m = new Uint8Array(buf);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const img = c.getContext("2d").createImageData(w, h);
+  const d = img.data;
+  for (let i = 0, p = 0; i < m.length; i++, p += 4) {
+    if (m[i]) { d[p] = 255; d[p + 1] = 0; d[p + 2] = 170; d[p + 3] = 130; }
+  }
+  c.getContext("2d").putImageData(img, 0, 0);
+  return c;
+}
+
+function draw() {
+  ctx.drawImage(photo, 0, 0);
+  if (showMask && maskCanvas) ctx.drawImage(maskCanvas, 0, 0);
+  const r = Math.max(3.5, grainR * 0.34);
+  const lw = Math.max(1.6, grainR * 0.1);
+  const COLOR = { one: "#22D3EE", split: "#F59E0B", manual: "#F0338D" };
+  for (const m of marks) {
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = COLOR[m.kind] || COLOR.one;
+    ctx.fill();
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = "rgba(0,0,0,.7)";
+    ctx.stroke();
+  }
+  document.getElementById("out-count").textContent = shots.length ? usedCount() : total();
+  document.getElementById("full-count").textContent = total();
+  recalcHtz();
+  if (shots.length) renderShots();
+}
+
+/* The weight is typed on the home screen, straight off the scale, and stays
+   correctable on the result screen — two inputs over one value. */
+const wIn = document.getElementById("in-weight");
+const wFix = document.getElementById("in-weight-fix");
+
+function weightValue() { return parseNum(wIn.value); }
+
+function setWeight(txt, from) {
+  if (from !== wIn) wIn.value = txt;
+  if (from !== wFix) wFix.value = txt;
+  const ok = isFinite(weightValue()) && weightValue() > 0;
+  document.getElementById("in-cam").disabled = !ok;
+  document.getElementById("in-gal").disabled = !ok;
+  document.getElementById("lbl-cam").classList.toggle("off", !ok);
+  document.getElementById("lbl-gal").classList.toggle("off", !ok);
+  document.getElementById("weight-hint").textContent = ok
+    ? "Hotovo — teď rozprostři vzorek v misce a vyfoť ho."
+    : "Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.";
+  recalcHtz();
+}
+
+wIn.addEventListener("input", () => setWeight(wIn.value, wIn));
+wFix.addEventListener("input", () => setWeight(wFix.value, wFix));
+
+/* No plausibility band on the result: with hundreds of varieties a "typical"
+   HTZ flagged good measurements more often than bad ones. */
+function recalcHtz() {
+  const el = document.getElementById("out-htz");
+  const wgt = weightValue();
+  const n = usedCount();
+  if (!isFinite(wgt) || wgt <= 0 || n <= 0) {
+    el.innerHTML = '— <span class="unit">g</span>';
+    el.classList.add("pending");
+    document.getElementById("btn-save").disabled = true;
+    updateBar();
+    return null;
+  }
+  const htz = wgt / n * 1000;
+  el.innerHTML = fmt1(htz) + ' <span class="unit">g</span>';
+  el.classList.remove("pending");
+  document.getElementById("btn-save").disabled = false;
+  updateBar();
+  return htz;
+}
+
+/* --- tap to correct --------------------------------------------------- */
+cv.addEventListener("click", ev => {
+  const rect = cv.getBoundingClientRect();
+  const sx = cv.width / rect.width, sy = cv.height / rect.height;
+  const x = (ev.clientX - rect.left) * sx, y = (ev.clientY - rect.top) * sy;
+  const reach = Math.max(20, grainR * 1.35);
+
+  let hit = -1, bestD = Infinity;
+  for (let i = 0; i < marks.length; i++) {
+    const d = Math.hypot(marks[i].x - x, marks[i].y - y);
+    if (d < reach && d < bestD) { bestD = d; hit = i; }
+  }
+
+  if (hit >= 0) {
+    undoStack.push({ op: "dec", i: hit, mark: Object.assign({}, marks[hit]) });
+    marks.splice(hit, 1);
+  } else {
+    marks.push({ x, y, n: 1, kind: "manual" });
+    undoStack.push({ op: "add" });
+  }
+  draw();
+});
+
+document.getElementById("btn-undo").addEventListener("click", () => {
+  const u = undoStack.pop();
+  if (!u) return;
+  if (u.op === "add") marks.pop();
+  else marks.splice(u.i, 0, u.mark);
+  draw();
+});
+
+document.getElementById("btn-mask").addEventListener("click", ev => {
+  showMask = !showMask;
+  ev.currentTarget.textContent = showMask ? "Zpět na fotku" : "Co appka vidí";
+  draw();
+});
+
+document.getElementById("btn-zoom").addEventListener("click", ev => {
+  const box = document.getElementById("shot");
+  const on = box.classList.toggle("zoom");
+  ev.currentTarget.textContent = on ? "Zmenšit" : "Přiblížit";
+});
+
+/* Full screen is a fixed overlay rather than the Fullscreen API: Safari on an
+   iPhone does not offer that API for anything but video. */
+function setFull(on) {
+  const box = document.getElementById("shot");
+  box.classList.toggle("full", on);
+  if (on) {
+    box.classList.remove("zoom");
+    document.getElementById("btn-zoom").textContent = "Přiblížit";
+  }
+  document.body.style.overflow = on ? "hidden" : "";
+}
+document.getElementById("btn-full").addEventListener("click", () => setFull(true));
+document.getElementById("btn-full-close").addEventListener("click", () => setFull(false));
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") setFull(false); });
+
+
+/* ══════════════════════════════════════════════════════════════
+   Capture → analyse
+   ═══════════════════════════════════════════════════════════ */
+function setBusy(txt) { document.getElementById("busy-text").textContent = txt; }
+
+/* The counting runs in a Worker built from the pipeline script's own source, so
+   the phone stays responsive while it works. If a browser refuses to start the
+   Worker the same functions are already loaded on this thread — the count still
+   happens, it just blocks for a few seconds. */
+let worker = null, workerDead = false;
+function ensureWorker() {
+  if (worker || workerDead) return worker;
+  try {
+    const src = document.getElementById("pipeline").textContent;
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+  } catch (err) { workerDead = true; worker = null; }
+  return worker;
+}
+
+function countGrains(imgData, w, h) {
+  const wk = ensureWorker();
+  if (!wk) {
+    return new Promise(res => setTimeout(() => {
+      const seg = segment(imgData, w, h);
+      if (seg.fail) { res({ fail: seg.fail }); return; }
+      const r = toMarks(seg);
+      res({ marks: r.marks, clustered: r.clustered, border: r.border, r0: r.r0,
+            rim: seg.rim || 0, blobs: seg.blobs.length, med: seg.med,
+            cover: seg.cover, mask: seg.mask.buffer });
+    }, 40));
+  }
+  return new Promise((res, rej) => {
+    wk.onmessage = ev => {
+      if (ev.data.progress) { setBusy(ev.data.progress); return; }
+      res(ev.data);
+    };
+    wk.onerror = () => { workerDead = true; worker = null; rej(new Error("worker")); };
+    const buf = imgData.data.buffer;
+    wk.postMessage({ buf, w, h }, [buf]);   // handed over, not copied
+  });
+}
+
+/* `append` adds a further photo of the same sample; otherwise a new
+   measurement starts. A photo that cannot be counted is shown with the
+   reason and never joins the sample. */
+async function handleFile(file, append) {
+  if (!file) return;
+  if (!append) { shots = []; cur = -1; }
+  setBusy("Načítám fotku…");
+  show("s-busy");
+  // let the browser paint the spinner before the work starts
+  await new Promise(r => setTimeout(r, 50));
+
+  try {
+    const bmp = await loadBitmap(file);
+    const scale = Math.min(1, CROPS[crop].side / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+
+    const pic = document.createElement("canvas");
+    pic.width = w; pic.height = h;
+    pic.getContext("2d").drawImage(bmp, 0, 0, w, h);
+
+    const data = pic.getContext("2d").getImageData(0, 0, w, h);
+    acceptCount(pic, w, h, await countGrains(data, w, h));
+  } catch (err) {
+    document.getElementById("warnings").innerHTML =
+      '<div class="note bad">Fotku se nepodařilo načíst. Zkus ji vyfotit znovu.</div>';
+    show("s-result");
+  }
+}
+
+/* A finished count — from this page's own pipeline or from the counting
+   station — becomes a photo of the sample, or a reason it could not be one. */
+function acceptCount(pic, w, h, seg) {
+    if (seg.fail) {
+      const msg = {
+        contrast: "Zrna na fotce nejde odlišit od misky. Zkontroluj, že fotíš proti dnu misky a že vzorek není přesvícený.",
+        cover: "Zrna zabírají skoro celou fotku. Rozprostři je na větší plochu, ať je mezi nimi vidět miska.",
+        empty: "Na fotce nejsou žádná zrna. Zkontroluj, že je vzorek celý v záběru a ostrý."
+      }[seg.fail];
+      photo = pic; marks = []; undoStack = []; grainR = 10; maskCanvas = null;
+      cv.width = w; cv.height = h;
+      ctx.drawImage(photo, 0, 0);
+      document.getElementById("warnings").innerHTML = '<div class="note bad">' + msg + "</div>";
+      document.getElementById("diag").textContent = "";
+      document.getElementById("out-count").textContent = shots.length ? usedCount() : "0";
+      recalcHtz();
+      renderShots();
+      if (!shots.length) document.getElementById("next-box").classList.remove("hide");
+      show("s-result");
+      return;
+    }
+
+    const res = seg;
+    const free = res.marks.filter(m => m.kind === "one").length / Math.max(1, res.marks.length);
+    const diag =
+      "útvarů " + res.blobs + " · značek " + res.marks.length +
+      " · typické zrno " + res.med.toFixed(0) + " px² (r " + res.r0.toFixed(1) + " px)" +
+      " · pokrytí " + (res.cover * 100).toFixed(1) + " % · volných " + Math.round(free * 100) +
+      " % · fotka " + w + "×" + h;
+
+    const tips = [];
+    const n = res.marks.length;
+    // How big one grain is gets measured on the grains lying on their own, so
+    // the count is only as good as their share. On nine test photos of maize the
+    // count was within 2 % where over a fifth lay free, and 7–26 % high where a
+    // tenth did — whatever the variety, spreading the sample out is the fix.
+    const crowded = n > 0 && free < FREE_MIN;
+    if (crowded) {
+      tips.push("Samostatně leží jen " + Math.round(free * 100) + " % zrn. Velikost zrna appka měří na volně ležících zrnech, takže u nahrnutého vzorku obvykle napočítá víc, než je ve skutečnosti. <b>Rozhrň vzorek po celém dně misky a vyfoť znovu</b> — ať volně leží aspoň pětina zrn.");
+    }
+    // No notes for touching grains or for things beside the tray: one shows on
+    // nearly every photo and the other on every photo from a stand, and both
+    // are handled already — the free share above, the tray test in segment().
+    if (res.border > Math.max(2, n * 0.08)) {
+      tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
+    }
+    if (n < 40) {
+      tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
+    }
+    const warn = tips.length
+      ? '<div class="note' + (crowded ? " bad" : "") + '"><strong>Zkontroluj fotku</strong><ul><li>' +
+        tips.join("</li><li>") + '</li></ul></div><div style="height:14px"></div>'
+      : "";
+
+    shots.push({
+      photo: pic, marks: res.marks, undo: [], free, diag, warn,
+      grainR: Math.max(4, res.r0),
+      mask: res.maskCanvas || (res.mask ? buildMaskCanvas(res.mask, w, h) : null)
+    });
+    showShot(shots.length - 1);
+    show("s-result");
+}
+
+document.getElementById("in-cam").addEventListener("change", e => {
+  handleFile(e.target.files[0], false);
+  e.target.value = "";
+});
+document.getElementById("in-gal").addEventListener("change", e => {
+  handleFile(e.target.files[0], false);
+  e.target.value = "";
+});
+document.getElementById("in-next").addEventListener("change", e => {
+  handleFile(e.target.files[0], true);
+  e.target.value = "";
+});
+
+/* ══════════════════════════════════════════════════════════════
+   In-app camera
+   On a stand the tablet hangs face down over the tray, out of easy reach,
+   and the system camera puts its small shutter somewhere different on every
+   device. A live view with one big button — or the space bar on a keyboard —
+   is easier to work. The stream stays open between photos of one session so
+   the browser does not ask for the camera every time; it is released when the
+   app goes to the background. Where the browser has no camera access the
+   buttons fall back to the system camera, as before.
+   ═══════════════════════════════════════════════════════════════ */
+const camBox = document.getElementById("camera");
+const camVideo = document.getElementById("cam-video");
+const camMsg = document.getElementById("cam-msg");
+const camOK = !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+let camStream = null, camAppend = false;
+
+function camLive() {
+  return camStream && camStream.getVideoTracks().some(t => t.readyState === "live");
+}
+
+async function openCamera(append) {
+  camAppend = append;
+  const k = append ? shots.length + 1 : 1;
+  document.getElementById("cam-title").textContent = "Fotka " + k;
+  camMsg.classList.add("hide");
+  // Keys belong to the camera now; left on the photo button underneath, the
+  // space bar would reopen the camera instead of taking the picture.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  camBox.classList.remove("hide");
+  document.body.style.overflow = "hidden";
+  try {
+    if (!camLive()) {
+      camStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 4032 }, height: { ideal: 3024 } }
+      });
+    }
+    camVideo.srcObject = camStream;
+    await camVideo.play();
+  } catch (err) {
+    camMsg.textContent = "Kameru se nepodařilo spustit (" + (err && err.name || "chyba") +
+      "). Povol appce přístup ke kameře, nebo použij Systémový foťák nahoře.";
+    camMsg.classList.remove("hide");
+  }
+}
+
+function closeCamera() {
+  camBox.classList.add("hide");
+  document.body.style.overflow = "";
+}
+
+function releaseCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null;
+  camVideo.srcObject = null;
+}
+
+/* One press, one photo. Encoding the frame takes a moment with the camera
+   still on screen, and a second press in that moment used to start a second
+   count of the same sample alongside the first. */
+let shooting = false;
+function shoot() {
+  if (shooting || camBox.classList.contains("hide")) return;
+  const w = camVideo.videoWidth, h = camVideo.videoHeight;
+  if (!w || !h) return;
+  shooting = true;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(camVideo, 0, 0, w, h);
+  closeCamera();
+  // straight to the busy screen, where keys do nothing until the count is in
+  setBusy("Načítám fotku…");
+  show("s-busy");
+  c.toBlob(b => {
+    shooting = false;
+    if (b) handleFile(new File([b], "foto.jpg", { type: "image/jpeg" }), camAppend);
+  }, "image/jpeg", 0.95);
+}
+
+document.getElementById("cam-shoot").addEventListener("click", shoot);
+document.getElementById("cam-close").addEventListener("click", closeCamera);
+document.getElementById("cam-file").addEventListener("change", e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  closeCamera();
+  handleFile(f, camAppend);
+});
+document.addEventListener("visibilitychange", () => { if (document.hidden) releaseCamera(); });
+
+/* ══════════════════════════════════════════════════════════════
+   Counting station
+   Opened from the counting box (the Raspberry in it serves this very page),
+   a photo is taken by the box camera and counted by the box: the page asks
+   for it and gets back the photo and the marks. Elsewhere — GitHub Pages,
+   a phone — the ping finds nothing and the page works on its own as ever.
+   The station is also reached from other computers on the network, where the
+   browser has no camera of its own to offer; it does not need one.
+   ═══════════════════════════════════════════════════════════════ */
+let STATION = false;
+fetch("api/ping", { cache: "no-store" })
+  .then(r => r.ok ? r.json() : null)
+  .then(j => {
+    if (!j || !j.station) return;
+    STATION = true;
+    document.getElementById("lbl-cam").querySelector("span").textContent =
+      j.demo ? "📷 Vyfotit (stanice — ukázkové fotky)" : "📷 Vyfotit kamerou stanice";
+    document.getElementById("station-csv").classList.remove("hide");
+  })
+  .catch(() => { /* not a station */ });
+
+function loadImage(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+}
+
+async function stationShoot(append) {
+  if (shooting) return;
+  shooting = true;
+  if (!append) { shots = []; cur = -1; }
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  setBusy("Fotím a počítám…");
+  show("s-busy");
+  try {
+    // a station that hangs must not leave the spinner up for ever
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 90000);
+    const r = await fetch("api/shoot", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ side: CROPS[crop].side }), signal: ctl.signal
+    }).finally(() => clearTimeout(timer));
+    const seg = await r.json();
+    if (!r.ok || seg.error) throw new Error(seg.error || r.status);
+    const w = seg.w, h = seg.h;
+    const pic = document.createElement("canvas");
+    pic.width = w; pic.height = h;
+    pic.getContext("2d").drawImage(await loadImage(seg.photo), 0, 0, w, h);
+    if (seg.mask) {
+      // the station sends its mask as a grey PNG; tint it like the page's own
+      const m = document.createElement("canvas");
+      m.width = w; m.height = h;
+      const mc = m.getContext("2d");
+      mc.drawImage(await loadImage(seg.mask), 0, 0, w, h);
+      const d = mc.getImageData(0, 0, w, h);
+      for (let p = 0; p < d.data.length; p += 4) {
+        const on = d.data[p] > 127;
+        d.data[p] = 255; d.data[p + 1] = 0; d.data[p + 2] = 170; d.data[p + 3] = on ? 130 : 0;
+      }
+      mc.putImageData(d, 0, 0);
+      seg.maskCanvas = m;
+      delete seg.mask;
+    }
+    acceptCount(pic, w, h, seg);
+  } catch (err) {
+    document.getElementById("warnings").innerHTML =
+      '<div class="note bad">Stanice nevyfotila (' + String(err.message || err) + '). Zkus to znovu.</div>';
+    renderShots();
+    show("s-result");
+  } finally {
+    shooting = false;
+  }
+}
+
+/** One way to take the next photo, wherever the page is running. */
+function takePhoto(append) {
+  if (STATION) stationShoot(append);
+  else if (camOK) openCamera(append);
+  else document.getElementById(append ? "in-next" : "in-cam").click();
+}
+
+// the photo buttons go through takePhoto instead of the system camera
+document.getElementById("lbl-cam").addEventListener("click", e => {
+  if (!STATION && !camOK) return;
+  e.preventDefault();
+  takePhoto(false);
+});
+document.getElementById("lbl-next").addEventListener("click", e => {
+  if (!STATION && !camOK) return;
+  e.preventDefault();
+  takePhoto(shots.length > 0);
+});
+
+/* Keyboard, for a tablet on a stand worked from a Bluetooth keyboard:
+   in the camera space or Enter shoots and Esc goes back; on the result
+   space takes the next photo and Enter saves. */
+document.addEventListener("keydown", ev => {
+  const t = ev.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+  if (!camBox.classList.contains("hide")) {
+    if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); shoot(); }
+    else if (ev.key === "Escape") { ev.preventDefault(); closeCamera(); }
+    return;
+  }
+  if (document.getElementById("s-result").classList.contains("hide")) return;
+  if (ev.key === " " && !document.getElementById("next-box").classList.contains("hide") && (STATION || camOK)) {
+    ev.preventDefault();
+    takePhoto(shots.length > 0);
+  } else if (ev.key === "Enter" && !document.getElementById("btn-save").disabled) {
+    ev.preventDefault();
+    document.getElementById("btn-save").click();
+    // straight back to typing the next sample's name
+    document.getElementById("in-name").focus();
+  }
+});
+
+/* The trial a series of samples belongs to is typed once and stays — across
+   saves and across closing the app — until the next series overwrites it. */
+const TRIAL_KEY = "htz-pocitadlo-pokus";
+const trialIn = document.getElementById("in-trial");
+try { trialIn.value = localStorage.getItem(TRIAL_KEY) || ""; } catch (e) { /* ignore */ }
+trialIn.addEventListener("input", () => {
+  try { localStorage.setItem(TRIAL_KEY, trialIn.value.trim()); } catch (e) { /* ignore */ }
+});
+
+/* Tab and Enter walk the home screen: trial → code → weight → photo, so a
+   sample goes in from the keyboard alone. Tab is moved by hand because Safari
+   on an iPad, by default, tabs between text fields only and skips the photo
+   button. */
+trialIn.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter" && !(ev.key === "Tab" && !ev.shiftKey)) return;
+  ev.preventDefault();
+  document.getElementById("in-name").focus();
+});
+document.getElementById("in-name").addEventListener("keydown", ev => {
+  if (ev.key !== "Enter" && !(ev.key === "Tab" && !ev.shiftKey)) return;
+  ev.preventDefault();
+  wIn.focus();
+});
+// The photo buttons are labels around hidden file inputs; as tab stops of
+// their own, Enter or space on them does what a tap does.
+["lbl-cam", "lbl-gal"].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener("keydown", ev => {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!el.classList.contains("off")) el.click();
+  });
+});
+
+wIn.addEventListener("keydown", ev => {
+  if (ev.key === "Tab" && !ev.shiftKey) {
+    if (!(weightValue() > 0)) return;
+    ev.preventDefault();
+    document.getElementById("lbl-cam").focus();
+    return;
+  }
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  if (!(weightValue() > 0)) return;
+  wIn.blur();
+  takePhoto(false);
+});
+
+/* ══════════════════════════════════════════════════════════════
+   Save / list
+   ═══════════════════════════════════════════════════════════ */
+document.getElementById("btn-save").addEventListener("click", () => {
+  const htz = recalcHtz();
+  if (htz === null) return;
+  const wgt = weightValue();
+  const name = document.getElementById("in-name").value.trim();
+  const d = new Date();
+  const rec = {
+    id: Date.now(),
+    trial: trialIn.value.trim(),
+    name: name || "Vzorek " + (saved.length + 1),
+    crop: CROPS[crop].name,
+    count: usedCount(),
+    shots: shots.map(shotCount),
+    weight: wgt,
+    htz: htz,
+    when: d.toLocaleDateString("cs-CZ") + " " + d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })
+  };
+  saved.unshift(rec);
+  persist();
+  // on the station every measurement also goes into the CSV on the box, so it
+  // outlives this browser and can be fetched from any computer on the network
+  if (STATION) {
+    fetch("api/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(rec) })
+      .then(r => { if (!r.ok) throw new Error(r.status); })
+      .catch(() => alert("Měření se uložilo jen v tomto prohlížeči, do stanice ne. Zkontroluj, že stanice běží."));
+  }
+  setWeight("", null);
+  document.getElementById("in-name").value = "";
+  shots = []; cur = -1;
+  renderList();
+  renderRecent();
+  show("s-home");
+});
+
+document.getElementById("btn-cancel").addEventListener("click", () => {
+  shots = []; cur = -1;
+  show("s-home");
+});
+
+// "4S · 1 A" — the trial first, so a series reads together in the list
+function sampleLabel(m) { return (m.trial ? m.trial + " · " : "") + m.name; }
+
+function renderList() {
+  const box = document.getElementById("list-rows");
+  box.innerHTML = "";
+  if (!saved.length) {
+    box.innerHTML = '<div class="empty">Zatím žádná uložená měření.</div>';
+    return;
+  }
+  const rows = document.createElement("div");
+  rows.className = "rows";
+  saved.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "row";
+    const who = document.createElement("div");
+    who.className = "who";
+    const b = document.createElement("b");
+    b.textContent = sampleLabel(m);
+    const s = document.createElement("span");
+    s.textContent = (m.crop ? m.crop + " · " : "") + m.count + " zrn · " + fmt2(m.weight) + " g · " + m.when;
+    who.append(b, s);
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = fmt1(m.htz);
+    const kill = document.createElement("button");
+    kill.className = "kill";
+    kill.type = "button";
+    kill.textContent = "×";
+    kill.setAttribute("aria-label", "Smazat " + sampleLabel(m));
+    kill.addEventListener("click", () => {
+      saved = saved.filter(x => x.id !== m.id);
+      persist(); renderList(); renderRecent();
+    });
+    row.append(who, val, kill);
+    rows.append(row);
+  });
+  box.append(rows);
+}
+
+function renderRecent() {
+  const box = document.getElementById("home-recent");
+  box.innerHTML = "";
+  if (!saved.length) return;
+  const head = document.createElement("div");
+  head.className = "label";
+  head.textContent = "Poslední měření";
+  const rows = document.createElement("div");
+  rows.className = "rows";
+  saved.slice(0, 3).forEach(m => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.style.gridTemplateColumns = "1fr auto";
+    const who = document.createElement("div");
+    who.className = "who";
+    const b = document.createElement("b");
+    b.textContent = sampleLabel(m);
+    const s = document.createElement("span");
+    s.textContent = m.count + " zrn · " + fmt2(m.weight) + " g";
+    who.append(b, s);
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = fmt1(m.htz);
+    row.append(who, val);
+    rows.append(row);
+  });
+  const more = document.createElement("button");
+  more.className = "btn ghost";
+  more.type = "button";
+  more.textContent = "Všechna měření (" + saved.length + ")";
+  more.addEventListener("click", () => { renderList(); show("s-list"); });
+  box.append(head, document.createElement("div"), rows, more);
+  box.children[1].style.height = "8px";
+  box.style.display = "flex";
+  box.style.flexDirection = "column";
+  box.style.gap = "8px";
+}
+
+document.getElementById("btn-copy").addEventListener("click", async () => {
+  const txt = ["Pokus\tVzorek\tPlodina\tZrn\tFotky (zrn)\tHmotnost (g)\tHTZ (g)\tČas"]
+    .concat(saved.map(m => [m.trial || "", m.name, m.crop || "", m.count, (m.shots || [m.count]).join(" / "),
+                            fmt2(m.weight), fmt1(m.htz), m.when].join("\t")))
+    .join("\n");
+  const dump = document.getElementById("dump");
+  try {
+    await navigator.clipboard.writeText(txt);
+    dump.classList.add("hide");
+    const btn = document.getElementById("btn-copy");
+    btn.textContent = "Zkopírováno ✓";
+    setTimeout(() => { btn.textContent = "Zkopírovat všechna měření"; }, 1800);
+  } catch (e) {
+    // clipboard blocked — hand the text over to be selected manually
+    dump.value = txt;
+    dump.classList.remove("hide");
+    dump.focus();
+    dump.select();
+  }
+});
+
+document.getElementById("btn-clear").addEventListener("click", () => {
+  if (!saved.length) return;
+  if (!confirm("Opravdu smazat všechna uložená měření? Nejde to vrátit.")) return;
+  saved = [];
+  persist(); renderList(); renderRecent();
+});
+
+document.getElementById("list-back").addEventListener("click", () => show("s-home"));
+document.getElementById("go-help").addEventListener("click", () => show("s-help"));
+document.getElementById("help-back").addEventListener("click", () => show("s-home"));
+
+renderCrops();
+setWeight("", null);
+renderList();
+renderRecent();
+show("s-home");
+ensureWorker();   // spin it up now, so the first photo does not wait for it
+</script>
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     Counting station page only (stanice.html). Appended after the app's
+     own scripts; the iPad app (index.html) never contains any of this.
+     The box streams its camera and takes the photo; this browser counts.
+     On a wide screen the page splits: settings on the left, the live
+     view and the result on the right.
+     ═════════════════════════════════════════════════════════════ -->
+<style>
+:root{ --side-w:360px; }
+body.station .wrap{
+  max-width:none; margin:0; padding:0; gap:0;
+  display:grid; grid-template-columns:var(--side-w) minmax(0,1fr); height:100vh;
+}
+body.station #side{
+  grid-column:1; grid-row:1; overflow:auto;
+  padding:16px; display:flex; flex-direction:column; gap:14px;
+  border-right:1px solid var(--line); background:var(--ground);
+}
+body.station .wrap > section{
+  grid-column:2; grid-row:1; min-width:0; height:100vh; overflow:auto; padding:16px;
+}
+body.station #s-home:not(.hide){ display:flex; }
+body.station #s-home > :not(#live){ display:none !important; }
+#live{
+  position:relative; flex:1; min-height:0;
+  background:#000; border-radius:var(--radius); overflow:hidden;
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+}
+#live img{ max-width:100%; max-height:100%; object-fit:contain; display:block; }
+#live .live-hint{
+  position:absolute; left:50%; bottom:16px; transform:translateX(-50%);
+  background:rgba(0,0,0,.6); color:#fff; padding:9px 16px; border-radius:999px;
+  font-weight:600; font-size:15px; white-space:nowrap; pointer-events:none;
+}
+#live .live-off{ color:#aaa; font-size:15px; position:absolute; }
+body.station .shot{ width:auto; margin-left:0; border:1px solid var(--line); border-radius:12px; }
+body.station .shot canvas{ max-height:calc(100vh - 200px); }
+body.station .shot.full canvas{ max-height:100%; }
+body.station .actbar{ left:var(--side-w); }
+</style>
+
+<script>
+"use strict";
+(function () {
+  // this page is only ever served by the station
+  STATION = true;
+  document.getElementById("station-csv").classList.remove("hide");
+
+  /* The photo comes from the box camera at the working size of the crop and
+     is counted here, by this computer, exactly as a photo from the iPad is. */
+  stationShoot = async function (append) {
+    if (shooting) return;
+    shooting = true;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    setBusy("Fotím…");
+    show("s-busy");
+    try {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), 60000);
+      const r = await fetch("api/still?side=" + CROPS[crop].side + "&t=" + Date.now(),
+                            { cache: "no-store", signal: ctl.signal })
+        .finally(() => clearTimeout(timer));
+      if (!r.ok) throw new Error((await r.text()) || r.status);
+      const blob = await r.blob();
+      shooting = false;
+      await handleFile(new File([blob], "stanice.jpg", { type: "image/jpeg" }), append);
+    } catch (err) {
+      shooting = false;
+      document.getElementById("warnings").innerHTML =
+        '<div class="note bad">Stanice nevyfotila (' + String(err.message || err) + '). Zkus to znovu.</div>';
+      renderShots();
+      show("s-result");
+    }
+  };
+
+  if (window.innerWidth < 900) return;   // a narrow screen keeps the one-column app
+
+  /* ── split layout: settings left, live view right ── */
+  document.body.classList.add("station");
+  const wrap = document.querySelector(".wrap");
+  const home = document.getElementById("s-home");
+  const side = document.createElement("aside");
+  side.id = "side";
+  wrap.prepend(side);
+  const cards = home.querySelectorAll(":scope > .card");   // crop, steps, inputs
+  side.append(
+    document.querySelector(".masthead"), document.querySelector(".ticks"),
+    cards[0], cards[2],
+    document.getElementById("home-recent"), document.getElementById("go-help")
+  );
+
+  const live = document.createElement("div");
+  live.id = "live";
+  live.innerHTML = '<img id="live-img" alt="Živý obraz z kamery stanice">' +
+                   '<div class="live-hint">Enter = vyfotit a spočítat</div>';
+  home.prepend(live);
+  const img = live.querySelector("img");
+  img.addEventListener("error", () => {
+    // the stream dropped (box restarted, network) — try again shortly
+    setTimeout(() => { if (!home.classList.contains("hide")) img.src = "api/stream?" + Date.now(); }, 2000);
+  });
+
+  function ready() { return weightValue() > 0; }
+  function shootFromHome() {
+    if (ready()) takePhoto(false);
+    else { wIn.focus(); }
+  }
+  live.addEventListener("click", shootFromHome);
+
+  /* The live view runs only while it is on screen: on the Pi the stream's
+     JPEG encoding is the heaviest thing it does. */
+  const baseShow = show;
+  show = function (id) {
+    baseShow(id);
+    if (id === "s-home") {
+      if (!img.src || !img.src.includes("api/stream")) img.src = "api/stream?" + Date.now();
+    } else if (img.src) {
+      img.src = "data:,";
+    }
+  };
+
+  // Enter or space on the live view, outside the text fields, takes the photo
+  document.addEventListener("keydown", ev => {
+    // the Enter that just saved a sample lands back here — not a new photo
+    if (ev.defaultPrevented) return;
+    const t = ev.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (home.classList.contains("hide")) return;
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    ev.preventDefault();
+    shootFromHome();
+  });
+
+  show("s-home");
+  document.getElementById("in-name").focus();
+})();
+</script>
+
+</body>
+</html>
