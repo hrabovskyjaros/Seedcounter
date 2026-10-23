@@ -2477,6 +2477,25 @@ body.station .shot{ width:auto; margin-left:0; border:1px solid var(--line); bor
 body.station .shot canvas{ max-height:calc(100vh - 200px); }
 body.station .shot.full canvas{ max-height:100%; }
 body.station .actbar{ left:var(--side-w); }
+
+/* crop setting: the whole frame with a rectangle dragged over it */
+#live.cropping{ cursor:crosshair; }
+#live.cropping .live-hint{ display:none; }
+#crop-box{
+  position:absolute; border:2px solid #FFE14D; box-shadow:0 0 0 9999px rgba(0,0,0,.45);
+  pointer-events:none; display:none;
+}
+#crop-bar{
+  position:absolute; top:14px; left:50%; transform:translateX(-50%);
+  display:none; gap:8px; align-items:center; z-index:2;
+}
+#live.cropping #crop-bar{ display:flex; }
+#crop-bar span{ color:#fff; background:rgba(0,0,0,.6); padding:8px 12px; border-radius:10px; font-size:14px; }
+#crop-bar button{
+  font:inherit; font-size:15px; font-weight:600; min-height:40px; padding:0 14px;
+  border-radius:10px; border:0; background:#fff; color:#111; cursor:pointer;
+}
+#crop-bar button.ok{ background:#1F8C64; color:#fff; }
 </style>
 
 <script>
@@ -2536,16 +2555,101 @@ body.station .actbar{ left:var(--side-w); }
   home.prepend(live);
   const img = live.querySelector("img");
   img.addEventListener("error", () => {
-    // the stream dropped (box restarted, network) — try again shortly
-    setTimeout(() => { if (!home.classList.contains("hide")) img.src = "api/stream?" + Date.now(); }, 2000);
+    // the stream dropped (box restarted, network) — try again shortly; a
+    // stream stopped on purpose ("data:,") or the crop frame stay as they are
+    if (!img.src.includes("api/stream")) return;
+    setTimeout(() => {
+      if (!home.classList.contains("hide") && !cropping) img.src = "api/stream?" + Date.now();
+    }, 2000);
   });
 
   function ready() { return weightValue() > 0; }
   function shootFromHome() {
+    if (cropping) return;
     if (ready()) takePhoto(false);
     else { wIn.focus(); }
   }
   live.addEventListener("click", shootFromHome);
+
+  /* ── crop: drag a rectangle over the whole frame; the box then cuts its
+     live view and every photo to it, so the tray walls and the cabinet
+     around the tray are never counted ── */
+  let cropping = false, drag = null, rect = null;
+  const box = document.createElement("div");
+  box.id = "crop-box";
+  const bar = document.createElement("div");
+  bar.id = "crop-bar";
+  bar.innerHTML = '<span>Táhni myší přes dno misky</span>' +
+                  '<button type="button" class="ok" id="crop-save">Uložit výřez</button>' +
+                  '<button type="button" id="crop-all">Celý obraz</button>' +
+                  '<button type="button" id="crop-cancel">Zrušit</button>';
+  live.append(box, bar);
+  const cropBtn = document.createElement("button");
+  cropBtn.type = "button";
+  cropBtn.className = "btn ghost";
+  cropBtn.textContent = "Výřez obrazu (jen dno misky)";
+  side.append(cropBtn);
+
+  function imgRect() { return img.getBoundingClientRect(); }
+  function drawBox() {
+    if (!rect) { box.style.display = "none"; return; }
+    const r = imgRect(), l = live.getBoundingClientRect();
+    box.style.display = "block";
+    box.style.left = (r.left - l.left + rect.x0 * r.width) + "px";
+    box.style.top = (r.top - l.top + rect.y0 * r.height) + "px";
+    box.style.width = ((rect.x1 - rect.x0) * r.width) + "px";
+    box.style.height = ((rect.y1 - rect.y0) * r.height) + "px";
+  }
+  function frac(ev) {
+    const r = imgRect();
+    return { x: Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+             y: Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)) };
+  }
+  async function startCrop() {
+    if (home.classList.contains("hide")) show("s-home");
+    cropping = true;
+    live.classList.add("cropping");
+    img.src = "data:,";
+    try { rect = await (await fetch("api/crop", { cache: "no-store" })).json(); } catch (e) { rect = null; }
+    img.onload = () => { img.onload = null; drawBox(); };
+    img.src = "api/frame?" + Date.now();
+  }
+  function endCrop() {
+    cropping = false;
+    live.classList.remove("cropping");
+    box.style.display = "none";
+    img.src = "api/stream?" + Date.now();
+  }
+  async function saveCrop(c) {
+    const r = await fetch("api/crop", { method: "POST", headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify(c) });
+    if (!r.ok) { alert("Výřez se neuložil: " + ((await r.json()).error || r.status)); return; }
+    endCrop();
+  }
+  cropBtn.addEventListener("click", startCrop);
+  live.addEventListener("mousedown", ev => {
+    if (!cropping || ev.target.closest("#crop-bar")) return;
+    ev.preventDefault();
+    const p = frac(ev);
+    drag = p;
+    rect = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    drawBox();
+  });
+  window.addEventListener("mousemove", ev => {
+    if (!drag) return;
+    const p = frac(ev);
+    rect = { x0: Math.min(drag.x, p.x), y0: Math.min(drag.y, p.y), x1: Math.max(drag.x, p.x), y1: Math.max(drag.y, p.y) };
+    drawBox();
+  });
+  window.addEventListener("mouseup", () => { drag = null; });
+  window.addEventListener("resize", () => { if (cropping) drawBox(); });
+  bar.addEventListener("click", ev => ev.stopPropagation());
+  document.getElementById("crop-save").addEventListener("click", () => {
+    if (!rect || rect.x1 - rect.x0 < 0.1 || rect.y1 - rect.y0 < 0.1) { alert("Nejdřív myší označ dno misky."); return; }
+    saveCrop(rect);
+  });
+  document.getElementById("crop-all").addEventListener("click", () => saveCrop(null));
+  document.getElementById("crop-cancel").addEventListener("click", endCrop);
 
   /* The live view runs only while it is on screen: on the Pi the stream's
      JPEG encoding is the heaviest thing it does. */
