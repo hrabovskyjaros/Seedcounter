@@ -2478,22 +2478,22 @@ body.station .shot canvas{ max-height:calc(100vh - 200px); }
 body.station .shot.full canvas{ max-height:100%; }
 body.station .actbar{ left:var(--side-w); }
 
-/* crop setting: the whole frame with a rectangle dragged over it */
-#live.cropping{ cursor:crosshair; }
+/* crop setting: the whole frame with a four-cornered outline over it */
 #live.cropping .live-hint{ display:none; }
-#crop-box{
-  position:absolute; border:2px solid #FFE14D; box-shadow:0 0 0 9999px rgba(0,0,0,.45);
-  pointer-events:none; display:none;
-}
+#crop-svg{ position:absolute; display:none; overflow:visible; pointer-events:none; }
+#live.cropping #crop-svg{ display:block; }
+#crop-svg .shade{ fill:rgba(0,0,0,.5); fill-rule:evenodd; }
+#crop-svg .edge{ fill:none; stroke:#FFE14D; stroke-width:2; }
+#crop-svg .pt{ fill:#FFE14D; stroke:#111; stroke-width:2; }
 #crop-bar{
   position:absolute; top:14px; left:50%; transform:translateX(-50%);
   display:none; gap:8px; align-items:center; z-index:2;
 }
 #live.cropping #crop-bar{ display:flex; }
-#crop-bar span{ color:#fff; background:rgba(0,0,0,.6); padding:8px 12px; border-radius:10px; font-size:14px; }
+#crop-bar span{ color:#fff; background:rgba(0,0,0,.6); padding:8px 12px; border-radius:10px; font-size:14px; white-space:nowrap; }
 #crop-bar button{
   font:inherit; font-size:15px; font-weight:600; min-height:40px; padding:0 14px;
-  border-radius:10px; border:0; background:#fff; color:#111; cursor:pointer;
+  border-radius:10px; border:0; background:#fff; color:#111; cursor:pointer; white-space:nowrap;
 }
 #crop-bar button.ok{ background:#1F8C64; color:#fff; }
 </style>
@@ -2571,19 +2571,23 @@ body.station .actbar{ left:var(--side-w); }
   }
   live.addEventListener("click", shootFromHome);
 
-  /* ── crop: drag a rectangle over the whole frame; the box then cuts its
-     live view and every photo to it, so the tray walls and the cabinet
-     around the tray are never counted ── */
-  let cropping = false, drag = null, rect = null;
-  const box = document.createElement("div");
-  box.id = "crop-box";
+  /* ── crop: four corners dragged onto the tray floor; the box then cuts its
+     live view and every photo to that outline, so the tray walls and the
+     cabinet around the tray are never counted. Four free corners rather than
+     a rectangle, because the camera sees the tray a little at a slant. ── */
+  let cropping = false, drag = null, pts = null;   // pts: [[x,y] x4] as fractions of the frame
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.id = "crop-svg";
+  svg.innerHTML = '<path class="shade"/><polygon class="edge"/>' +
+                  '<circle class="pt" r="8"/><circle class="pt" r="8"/><circle class="pt" r="8"/><circle class="pt" r="8"/>';
   const bar = document.createElement("div");
   bar.id = "crop-bar";
-  bar.innerHTML = '<span>Táhni myší přes dno misky</span>' +
+  bar.innerHTML = '<span>Rohy přetáhni na rohy dna misky · uvnitř posuneš celé · šipky jemně</span>' +
                   '<button type="button" class="ok" id="crop-save">Uložit výřez</button>' +
                   '<button type="button" id="crop-all">Celý obraz</button>' +
                   '<button type="button" id="crop-cancel">Zrušit</button>';
-  live.append(box, bar);
+  live.append(svg, bar);
   const cropBtn = document.createElement("button");
   cropBtn.type = "button";
   cropBtn.className = "btn ghost";
@@ -2591,33 +2595,62 @@ body.station .actbar{ left:var(--side-w); }
   side.append(cropBtn);
 
   function imgRect() { return img.getBoundingClientRect(); }
-  function drawBox() {
-    if (!rect) { box.style.display = "none"; return; }
+  function toPx(p) { const r = imgRect(); return [p[0] * r.width, p[1] * r.height]; }
+  function drawPoly() {
+    if (!pts) return;
     const r = imgRect(), l = live.getBoundingClientRect();
-    box.style.display = "block";
-    box.style.left = (r.left - l.left + rect.x0 * r.width) + "px";
-    box.style.top = (r.top - l.top + rect.y0 * r.height) + "px";
-    box.style.width = ((rect.x1 - rect.x0) * r.width) + "px";
-    box.style.height = ((rect.y1 - rect.y0) * r.height) + "px";
+    svg.style.left = (r.left - l.left) + "px";
+    svg.style.top = (r.top - l.top) + "px";
+    svg.setAttribute("width", r.width);
+    svg.setAttribute("height", r.height);
+    const px = pts.map(toPx);
+    svg.querySelector(".edge").setAttribute("points", px.map(p => p.join(",")).join(" "));
+    svg.querySelector(".shade").setAttribute("d",
+      "M0,0H" + r.width + "V" + r.height + "H0Z M" + px.map(p => p.join(",")).join(" L") + "Z");
+    svg.querySelectorAll(".pt").forEach((c, i) => { c.setAttribute("cx", px[i][0]); c.setAttribute("cy", px[i][1]); });
   }
   function frac(ev) {
     const r = imgRect();
-    return { x: Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
-             y: Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)) };
+    return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+            Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+  }
+  // point in polygon, for "grab the inside and move it all"
+  function inside(p) {
+    let c = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const [xi, yi] = pts[i], [xj, yj] = pts[j];
+      if ((yi > p[1]) !== (yj > p[1]) && p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi) c = !c;
+    }
+    return c;
+  }
+  // a corner within 16 px, else the inside, else nothing
+  function grab(ev) {
+    const r = imgRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
+    let best = -1, bd = 16;
+    pts.forEach((p, i) => { const d = Math.hypot(p[0] * r.width - x, p[1] * r.height - y); if (d < bd) { bd = d; best = i; } });
+    if (best >= 0) return best;
+    return inside(frac(ev)) ? "move" : null;
+  }
+  function shift(base, dx, dy) {
+    // keep every corner inside the frame
+    base.forEach(q => { dx = Math.min(1 - q[0], Math.max(-q[0], dx)); dy = Math.min(1 - q[1], Math.max(-q[1], dy)); });
+    return base.map(q => [q[0] + dx, q[1] + dy]);
   }
   async function startCrop() {
     if (home.classList.contains("hide")) show("s-home");
     cropping = true;
     live.classList.add("cropping");
     img.src = "data:,";
-    try { rect = await (await fetch("api/crop", { cache: "no-store" })).json(); } catch (e) { rect = null; }
-    img.onload = () => { img.onload = null; drawBox(); };
+    let c = null;
+    try { c = await (await fetch("api/crop", { cache: "no-store" })).json(); } catch (e) { /* none yet */ }
+    pts = c && c.points ? c.points : [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]];
+    img.onload = () => { img.onload = null; drawPoly(); };
     img.src = "api/frame?" + Date.now();
   }
   function endCrop() {
     cropping = false;
     live.classList.remove("cropping");
-    box.style.display = "none";
+    live.style.cursor = "";
     img.src = "api/stream?" + Date.now();
   }
   async function saveCrop(c) {
@@ -2628,26 +2661,42 @@ body.station .actbar{ left:var(--side-w); }
   }
   cropBtn.addEventListener("click", startCrop);
   live.addEventListener("mousedown", ev => {
-    if (!cropping || ev.target.closest("#crop-bar")) return;
+    if (!cropping || !pts || ev.target.closest("#crop-bar")) return;
+    const g = grab(ev);
+    if (g === null) return;
     ev.preventDefault();
-    const p = frac(ev);
-    drag = p;
-    rect = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
-    drawBox();
+    drag = { g, from: frac(ev), start: pts.map(p => p.slice()) };
   });
   window.addEventListener("mousemove", ev => {
-    if (!drag) return;
+    if (!cropping || !pts) return;
+    if (!drag) {
+      const g = grab(ev);
+      live.style.cursor = g === null ? "default" : g === "move" ? "move" : "grab";
+      return;
+    }
     const p = frac(ev);
-    rect = { x0: Math.min(drag.x, p.x), y0: Math.min(drag.y, p.y), x1: Math.max(drag.x, p.x), y1: Math.max(drag.y, p.y) };
-    drawBox();
+    if (drag.g === "move") {
+      pts = shift(drag.start, p[0] - drag.from[0], p[1] - drag.from[1]);
+    } else {
+      pts = drag.start.map(q => q.slice());
+      pts[drag.g] = p;
+    }
+    drawPoly();
   });
   window.addEventListener("mouseup", () => { drag = null; });
-  window.addEventListener("resize", () => { if (cropping) drawBox(); });
-  bar.addEventListener("click", ev => ev.stopPropagation());
-  document.getElementById("crop-save").addEventListener("click", () => {
-    if (!rect || rect.x1 - rect.x0 < 0.1 || rect.y1 - rect.y0 < 0.1) { alert("Nejdřív myší označ dno misky."); return; }
-    saveCrop(rect);
+  window.addEventListener("resize", () => { if (cropping) drawPoly(); });
+  // arrows nudge the whole outline a little; with Shift a larger step
+  document.addEventListener("keydown", ev => {
+    if (!cropping || !pts) return;
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[ev.key];
+    if (!d) return;
+    ev.preventDefault();
+    const s = ev.shiftKey ? 0.01 : 0.002;
+    pts = shift(pts, d[0] * s, d[1] * s);
+    drawPoly();
   });
+  bar.addEventListener("click", ev => ev.stopPropagation());
+  document.getElementById("crop-save").addEventListener("click", () => saveCrop({ points: pts }));
   document.getElementById("crop-all").addEventListener("click", () => saveCrop(null));
   document.getElementById("crop-cancel").addEventListener("click", endCrop);
 
