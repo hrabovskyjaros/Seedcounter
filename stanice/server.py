@@ -38,6 +38,7 @@ STATIC = {
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     "/icon-192.png": ("icon-192.png", "image/png"),
 }
+DISPLAY_SIDE = 1280   # longest side of the photo sent to the screen
 CSV_FIELDS = ["Pokus", "Vzorek", "Plodina", "Zrn", "Fotky (zrn)", "Hmotnost (g)", "HTZ (g)", "Čas"]
 
 
@@ -45,11 +46,21 @@ class Camera:
     """The box camera through Picamera2, kept running between photos so a
     shot costs a capture, not a camera start-up."""
 
-    def __init__(self):
+    def __init__(self, side=2400):
         from picamera2 import Picamera2  # only on the Raspberry
         self.cam = Picamera2()
-        cfg = self.cam.create_still_configuration(main={"format": "RGB888", "size": self.cam.sensor_resolution})
+        # The camera scales down in hardware to about the working size. A full
+        # 8 Mpx frame plus the count's buffers did not fit a Pi 3B+'s 1 GB and
+        # the shot never came back.
+        sw, sh = self.cam.sensor_resolution
+        s = min(1.0, side / max(sw, sh))
+        size = (int(sw * s) // 2 * 2, int(sh * s) // 2 * 2)
+        try:
+            cfg = self.cam.create_still_configuration(main={"format": "RGB888", "size": size}, buffer_count=1)
+        except TypeError:   # older Picamera2
+            cfg = self.cam.create_still_configuration(main={"format": "RGB888", "size": size})
         self.cam.configure(cfg)
+        print(f"kamera: snímač {sw}x{sh}, fotím {size[0]}x{size[1]}", flush=True)
         self.cam.start()
         time.sleep(1.5)  # let exposure and white balance settle once
 
@@ -97,18 +108,35 @@ class Station:
     def shoot(self, side):
         with self.lock:
             t0 = time.time()
+            print("foto…", flush=True)
             rgb = to_working_size(self.camera.capture_rgb(), side)
             t1 = time.time()
+            print(f"foto {rgb.shape[1]}x{rgb.shape[0]} za {t1 - t0:.1f} s, počítám…", flush=True)
             res = htz_count.count(rgb)
             t2 = time.time()
-        h, w = rgb.shape[:2]
-        ok, jpg = cv2.imencode(".jpg", rgb[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 88])
+            print(f"spočítáno za {t2 - t1:.1f} s: {len(res.get('marks', []))} zrn", flush=True)
+        # The count runs at full working size; the browser gets a smaller copy
+        # with the marks scaled to it. A 2400 px photo and mask made Chromium on
+        # the Pi's 1 GB crawl at every tap, and the screen shows no more anyway.
+        h0, w0 = rgb.shape[:2]
+        k = min(1.0, DISPLAY_SIDE / max(w0, h0))
+        w, h = round(w0 * k), round(h0 * k)
+        shown = rgb if k >= 1 else cv2.resize(rgb, (w, h), interpolation=cv2.INTER_AREA)
+        ok, jpg = cv2.imencode(".jpg", shown[..., ::-1], [cv2.IMWRITE_JPEG_QUALITY, 85])
         out = {"w": w, "h": h, "photo": data_url("image/jpeg", jpg.tobytes()),
                "timing": {"capture": round(t1 - t0, 2), "count": round(t2 - t1, 2)}}
         if "fail" in res:
             out["fail"] = res["fail"]
             return out
-        ok, png = cv2.imencode(".png", (res.pop("mask") * 255).astype(np.uint8))
+        mask = res.pop("mask") * 255
+        if k < 1:
+            mask = cv2.resize(mask.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)
+        ok, png = cv2.imencode(".png", mask.astype(np.uint8))
+        for m in res["marks"]:
+            m["x"] *= k
+            m["y"] *= k
+        res["r0"] *= k
+        res["med"] *= k * k
         out.update(res)
         out["mask"] = data_url("image/png", png.tobytes())
         return out
