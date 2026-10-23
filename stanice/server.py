@@ -60,13 +60,26 @@ class Camera:
         self.cam.configure(self.preview)
         self.cam.start()
         self.stills = {}
-        print(f"kamera: snímač {sw}x{sh}, náhled {size[0]}x{size[1]}", flush=True)
-        time.sleep(1.5)  # let exposure and white balance settle once
+        # A camera that can focus itself (Camera Module 3, Arducam 64 Mpx) keeps
+        # focusing on the tray; one with a fixed lens just has no such control.
+        self.af = "AfMode" in self.cam.camera_controls
+        if self.af:
+            from libcamera import controls
+            self.cam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+        print(f"kamera: snímač {sw}x{sh}, náhled {size[0]}x{size[1]}, ostření "
+              + ("automatické" if self.af else "pevné"), flush=True)
+        time.sleep(1.5)  # let exposure, white balance and focus settle once
 
     def preview_bgr(self):
         return self.cam.capture_array("main")
 
     def still_bgr(self, side):
+        if self.af:
+            # one focus pass on what is in the tray right now, then the shot
+            try:
+                self.cam.autofocus_cycle()
+            except Exception as e:
+                print("ostření: chyba", repr(e), flush=True)
         sw, sh = self.sensor
         s = min(1.0, side / max(sw, sh))
         size = (int(sw * s) // 2 * 2, int(sh * s) // 2 * 2)
