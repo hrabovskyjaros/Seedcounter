@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 HERE = Path(__file__).resolve().parent
 APP_DIR = HERE.parent          # the icons live one level up, as in the repo
@@ -121,12 +122,16 @@ class Station:
         self.crop = self._load_crop()
         threading.Thread(target=self._preview_loop, daemon=True).start()
 
-    # ── crop: the part of the frame that is tray floor, set once on the page.
-    # Kept as fractions of the frame, so it fits the live view and the photo alike.
+    # ── crop: the outline of the tray floor, four corners set once on the page.
+    # Kept as fractions of the frame, so it fits the live view and the photo
+    # alike. A rectangle saved by an earlier version is read as its corners.
     def _load_crop(self):
         try:
             c = json.loads(self.crop_path.read_text())
-            return [float(c[k]) for k in ("x0", "y0", "x1", "y1")]
+            if "points" in c:
+                return [[float(x), float(y)] for x, y in c["points"]]
+            x0, y0, x1, y1 = (float(c[k]) for k in ("x0", "y0", "x1", "y1"))
+            return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
         except Exception:
             return None
 
@@ -135,19 +140,33 @@ class Station:
             self.crop = None
             self.crop_path.unlink(missing_ok=True)
             return
-        x0, y0, x1, y1 = (min(1.0, max(0.0, float(c[k]))) for k in ("x0", "y0", "x1", "y1"))
-        x0, x1 = sorted((x0, x1)); y0, y1 = sorted((y0, y1))
-        if x1 - x0 < 0.1 or y1 - y0 < 0.1:
+        pts = [[min(1.0, max(0.0, float(x))), min(1.0, max(0.0, float(y)))] for x, y in c["points"]]
+        if len(pts) < 3 or cv2.contourArea(np.float32(pts)) < 0.01:
             raise ValueError("výřez je moc malý")
-        self.crop = [x0, y0, x1, y1]
-        self.crop_path.write_text(json.dumps(dict(zip(("x0", "y0", "x1", "y1"), self.crop))))
+        self.crop = pts
+        self.crop_path.write_text(json.dumps({"points": pts}))
+
+    def crop_box(self):
+        """The crop's bounding box as fractions: x0, y0, x1, y1."""
+        xs = [p[0] for p in self.crop]
+        ys = [p[1] for p in self.crop]
+        return min(xs), min(ys), max(xs), max(ys)
 
     def cropped(self, img):
+        """Cut to the outline's bounding box and paint what lies outside the
+        outline in the tray's own colour, so the count sees plain tray floor
+        there — no wall, no cabinet, nothing to count."""
         if not self.crop:
             return img
         h, w = img.shape[:2]
-        x0, y0, x1, y1 = self.crop
-        return img[round(y0 * h):round(y1 * h), round(x0 * w):round(x1 * w)]
+        x0, y0, x1, y1 = self.crop_box()
+        X0, Y0, X1, Y1 = round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)
+        out = img[Y0:Y1, X0:X1].copy()
+        poly = np.int32([[p[0] * w - X0, p[1] * h - Y0] for p in self.crop])
+        inside = np.zeros(out.shape[:2], np.uint8)
+        cv2.fillPoly(inside, [poly], 255)
+        out[inside == 0] = cv2.mean(out, mask=inside)[:3]
+        return out
 
     def full_frame(self):
         """One uncropped live frame, for drawing the crop on."""
@@ -186,7 +205,8 @@ class Station:
         # shoot bigger by the share the crop cuts away, so the cut-out still
         # has about the working size
         if self.crop:
-            side = side / max(self.crop[2] - self.crop[0], self.crop[3] - self.crop[1])
+            x0, y0, x1, y1 = self.crop_box()
+            side = side / max(x1 - x0, y1 - y0)
         with self.cam_lock:
             bgr = self.cropped(self.camera.still_bgr(round(side)))
         ok, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])
@@ -279,7 +299,7 @@ def make_handler(station):
                 return self.send(200, station.full_frame(), "image/jpeg")
             if path == "/api/crop":
                 c = station.crop
-                return self.send_json(dict(zip(("x0", "y0", "x1", "y1"), c)) if c else None)
+                return self.send_json({"points": c} if c else None)
             if path == "/api/still":
                 try:
                     q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
