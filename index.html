@@ -420,6 +420,9 @@ input[type=file]:focus-visible + span{text-decoration:underline;}
   line-height:1;
   cursor:pointer;
 }
+.row.photo-row{grid-template-columns:1fr auto; cursor:pointer;}
+.row.photo-row.cur{box-shadow:inset 3px 0 0 var(--accent);}
+.row.photo-row .tag{font-size:12px; font-weight:650; color:var(--accent); white-space:nowrap;}
 .empty{
   padding:22px 14px;
   text-align:center;
@@ -522,7 +525,11 @@ textarea.dump{
 
     <div class="card">
       <div class="field">
-        <label class="label" for="in-weight">1 · Hmotnost navážky (g)</label>
+        <label class="label" for="in-name">1 · Označení vzorku</label>
+        <input type="text" id="in-name" placeholder="např. vzorek 3" autocomplete="off">
+      </div>
+      <div class="field">
+        <label class="label" for="in-weight">2 · Hmotnost navážky (g)</label>
         <input type="text" id="in-weight" class="num-in" inputmode="decimal" placeholder="např. 10,24" autocomplete="off">
       </div>
       <p class="hint" id="weight-hint">Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.</p>
@@ -530,7 +537,7 @@ textarea.dump{
 
     <div style="height:14px"></div>
 
-    <div class="label">2 · Fotka vzorku</div>
+    <div class="label">3 · Fotka vzorku</div>
     <div style="height:8px"></div>
 
     <label class="btn off" id="lbl-cam">
@@ -565,7 +572,7 @@ textarea.dump{
 
     <div class="readout">
       <div class="cell">
-        <div class="label">Zrn na fotce</div>
+        <div class="label">Počet zrn</div>
         <div class="num" id="out-count">0</div>
       </div>
       <div class="cell htz">
@@ -575,6 +582,8 @@ textarea.dump{
     </div>
 
     <div style="height:14px"></div>
+
+    <div id="shots"></div>
 
     <div id="warnings"></div>
 
@@ -617,15 +626,18 @@ textarea.dump{
         <label class="label" for="in-weight-fix">Hmotnost navážky (g)</label>
         <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" placeholder="např. 10,24" autocomplete="off">
       </div>
-      <div class="field">
-        <label class="label" for="in-name">Označení vzorku (nepovinné)</label>
-        <input type="text" id="in-name" placeholder="např. vzorek 3" autocomplete="off">
-      </div>
     </div>
 
-    <div id="htz-check"></div>
-
     <div style="height:16px"></div>
+    <div id="next-box" class="hide">
+      <div class="note info" id="next-hint"></div>
+      <div style="height:10px"></div>
+      <label class="btn" id="lbl-next">
+        <input type="file" id="in-next" accept="image/*" capture="environment">
+        <span id="next-label">📷 Vyfotit 2. fotku</span>
+      </label>
+      <div style="height:10px"></div>
+    </div>
     <button class="btn" id="btn-save">Uložit měření</button>
     <div style="height:10px"></div>
     <button class="btn ghost" id="btn-cancel">Zahodit a začít znovu</button>
@@ -711,7 +723,7 @@ const CROPS = {
   barley: { name: "Ječmen",   scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000 },
-  maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000 },
+  maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
 };
 const CROP_KEY = "htz-pocitadlo-crop";
@@ -739,7 +751,7 @@ function renderCrops() {
     "Nasyp <b>" + c.scoop + "</b>" + (c.approx ? " (" + c.approx + ")" : "") +
     ", <b>zvaž ji</b> a rozprostři v misce do plochy zhruba <b>" + c.area +
     "</b>. Přesnou hmotnost trefovat nemusíš — stačí ji přesně zvážit." +
-    (c.lo > 0 ? " Čekaná HTZ <b>" + fmt1(c.lo) + "–" + fmt1(c.hi) + " g</b>." : "");
+    (c.photos > 1 ? " Vzorek vyfotíš <b>dvakrát</b>, mezi fotkami misku protřeseš." : "");
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -1202,7 +1214,10 @@ function segment(imgData, w, h) {
   // grains, so anything border-bound and vastly oversized is thrown away.
   let rim = 0;
   const kept = big.filter(b => {
-    if (b.area < Math.max(floor, med * 0.28)) return false;
+    // A third of a grain is chaff or a fleck on the tray rim, not a grain: on
+    // ten checked photos every such blob was one, while the smallest real
+    // kernels and halves measured 0.38 of a grain and up.
+    if (b.area < Math.max(floor, med * 0.35)) return false;
     if (offTray[b.id]) { rim++; return false; }
     if (b.border && b.area > med * 8) { rim++; return false; }
     return true;
@@ -1403,13 +1418,136 @@ if (typeof document === "undefined") {
    ═══════════════════════════════════════════════════════════ */
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
-const photo = document.createElement("canvas");
+let photo = document.createElement("canvas");
 
 let marks = [];
 let grainR = 10;
 let undoStack = [];
 
 function total() { return marks.reduce((s, m) => s + m.n, 0); }
+
+/* ══════════════════════════════════════════════════════════════
+   Several photos of one sample
+   The sample is shaken and shot again, and the count is taken from the
+   photo on which the most grains lie free. Every miscount seen so far was an
+   overcount in a clump, so the better-spread photo is the closer one: on
+   four maize samples of 250 it was within one grain every time, while the
+   average of the two drifted up to four grains high.
+   ═══════════════════════════════════════════════════════════ */
+let shots = [], cur = -1;
+const FREE_MIN = 0.2;      // below this share of free grains a photo counts high
+const SPREAD_MAX = 0.04;   // two photos of one sample further apart than this disagree
+
+function shotCount(s) { return s.marks.reduce((a, m) => a + m.n, 0); }
+
+function bestShot() {
+  let b = -1;
+  shots.forEach((s, i) => { if (b < 0 || s.free > shots[b].free) b = i; });
+  return b;
+}
+
+function spread() {
+  if (shots.length < 2) return 0;
+  const c = shots.map(shotCount);
+  return (Math.max(...c) - Math.min(...c)) / Math.max(1, Math.min(...c));
+}
+
+/** How many photos this sample needs: the crop's default, plus one more when
+ *  the first two are both crowded or do not agree. Never more than three. */
+function needed() {
+  const want = CROPS[crop].photos || 1;
+  if (want < 2 || shots.length < 2) return want;
+  const b = bestShot();
+  return (shots[b].free < FREE_MIN || spread() > SPREAD_MAX) ? 3 : 2;
+}
+
+function usedCount() {
+  const b = bestShot();
+  return b < 0 ? 0 : shotCount(shots[b]);
+}
+
+function showShot(i) {
+  cur = i;
+  const s = shots[i];
+  photo = s.photo;
+  marks = s.marks;
+  undoStack = s.undo;
+  grainR = s.grainR;
+  maskCanvas = s.mask;
+  showMask = false;
+  document.getElementById("btn-mask").textContent = "Co appka vidí";
+  cv.width = photo.width; cv.height = photo.height;
+  document.getElementById("diag").textContent = s.diag;
+  document.getElementById("warnings").innerHTML = s.warn;
+  draw();
+}
+
+function renderShots() {
+  const box = document.getElementById("shots");
+  box.innerHTML = "";
+  const need = needed();
+  if (shots.length > 1 || need > 1) {
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    const b = bestShot();
+    shots.forEach((s, i) => {
+      const row = document.createElement("div");
+      row.className = "row photo-row" + (i === cur ? " cur" : "");
+      const who = document.createElement("div");
+      who.className = "who";
+      const t = document.createElement("b");
+      t.textContent = "Fotka " + (i + 1) + " · " + shotCount(s) + " zrn";
+      const sub = document.createElement("span");
+      sub.textContent = "volně " + Math.round(s.free * 100) + " % zrn" + (i === cur ? " · zobrazená" : "");
+      who.append(t, sub);
+      const tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = i === b ? "✓ použije se" : "";
+      row.append(who, tag);
+      row.addEventListener("click", () => { showShot(i); renderShots(); });
+      rows.append(row);
+    });
+    box.append(rows);
+    const gap = document.createElement("div");
+    gap.style.height = "14px";
+    box.append(gap);
+  }
+
+  // the next photo, if this sample still needs one
+  const nb = document.getElementById("next-box");
+  const save = document.getElementById("btn-save");
+  const more = shots.length < need;
+  nb.classList.toggle("hide", !more);
+  if (more) {
+    const k = shots.length + 1;
+    document.getElementById("next-label").textContent =
+      shots.length ? "📷 Vyfotit " + k + ". fotku" : "📷 Vyfotit znovu";
+    let why = "";
+    if (shots.length === 1) {
+      why = "<b>Protřes misku</b>, zrna znovu rozhrň po celém dně a vyfoť ještě jednou. " +
+            "Výsledek se vezme z fotky, na které leží víc zrn volně.";
+    } else if (shots.length === 2) {
+      const sp = spread();
+      why = (sp > SPREAD_MAX
+              ? "Fotky se liší o <b>" + fmt1(sp * 100) + " %</b>. "
+              : "Na obou fotkách leží zrna moc u sebe. ") +
+            "<b>Rozhrň zrna víc</b> a vyfoť třetí fotku.";
+    } else {
+      why = "Fotku se nepodařilo spočítat. Vyfoť ji znovu.";
+    }
+    document.getElementById("next-hint").innerHTML = why;
+  } else if (shots.length >= 3 && shots[bestShot()].free < FREE_MIN) {
+    const n = document.createElement("div");
+    n.className = "note bad";
+    n.innerHTML = "Ani na třetí fotce neleží zrna dost volně — počet může být o pár procent vyšší než skutečnost.";
+    box.append(n);
+    const gap = document.createElement("div");
+    gap.style.height = "14px";
+    box.append(gap);
+  }
+  save.textContent = more && shots.length ? "Uložit bez další fotky" : "Uložit měření";
+  save.classList.toggle("secondary", more);
+}
 
 /* Diagnostic view: paint the detected grain mask over the photo. A count that is
    wildly off is almost always the mask being wrong — shadows, a reflection on the
@@ -1444,9 +1582,10 @@ function draw() {
     ctx.strokeStyle = "rgba(0,0,0,.7)";
     ctx.stroke();
   }
-  document.getElementById("out-count").textContent = total();
+  document.getElementById("out-count").textContent = shots.length ? usedCount() : total();
   document.getElementById("full-count").textContent = total();
   recalcHtz();
+  if (shots.length) renderShots();
 }
 
 /* The weight is typed on the home screen, straight off the scale, and stays
@@ -1473,15 +1612,15 @@ function setWeight(txt, from) {
 wIn.addEventListener("input", () => setWeight(wIn.value, wIn));
 wFix.addEventListener("input", () => setWeight(wFix.value, wFix));
 
+/* No plausibility band on the result: with hundreds of varieties a "typical"
+   HTZ flagged good measurements more often than bad ones. */
 function recalcHtz() {
   const el = document.getElementById("out-htz");
-  const check = document.getElementById("htz-check");
   const wgt = weightValue();
-  const n = total();
+  const n = usedCount();
   if (!isFinite(wgt) || wgt <= 0 || n <= 0) {
     el.innerHTML = '— <span class="unit">g</span>';
     el.classList.add("pending");
-    check.innerHTML = "";
     document.getElementById("btn-save").disabled = true;
     return null;
   }
@@ -1489,15 +1628,6 @@ function recalcHtz() {
   el.innerHTML = fmt1(htz) + ' <span class="unit">g</span>';
   el.classList.remove("pending");
   document.getElementById("btn-save").disabled = false;
-
-  // Plausibility band per crop — catches a mistyped weight or a wild miscount
-  // long before the number reaches a protocol.
-  const c = CROPS[crop];
-  check.innerHTML = (c.lo > 0 && (htz < c.lo || htz > c.hi))
-    ? '<div style="height:14px"></div><div class="note bad"><b>' + fmt1(htz) +
-      " g neodpovídá plodině " + c.name.toLowerCase() + "</b> (obvykle " + fmt1(c.lo) + "–" +
-      fmt1(c.hi) + " g). Zkontroluj hmotnost i počet zrn, než měření uložíš.</div>"
-    : "";
   return htz;
 }
 
@@ -1602,8 +1732,12 @@ function countGrains(imgData, w, h) {
   });
 }
 
-async function handleFile(file) {
+/* `append` adds a further photo of the same sample; otherwise a new
+   measurement starts. A photo that cannot be counted is shown with the
+   reason and never joins the sample. */
+async function handleFile(file, append) {
   if (!file) return;
+  if (!append) { shots = []; cur = -1; }
   setBusy("Načítám fotku…");
   show("s-busy");
   // let the browser paint the spinner before the work starts
@@ -1615,15 +1749,12 @@ async function handleFile(file) {
     const w = Math.max(1, Math.round(bmp.width * scale));
     const h = Math.max(1, Math.round(bmp.height * scale));
 
-    photo.width = w; photo.height = h;
-    photo.getContext("2d").drawImage(bmp, 0, 0, w, h);
-    cv.width = w; cv.height = h;
+    const pic = document.createElement("canvas");
+    pic.width = w; pic.height = h;
+    pic.getContext("2d").drawImage(bmp, 0, 0, w, h);
 
-    const data = photo.getContext("2d").getImageData(0, 0, w, h);
+    const data = pic.getContext("2d").getImageData(0, 0, w, h);
     const seg = await countGrains(data, w, h);
-
-    const warn = document.getElementById("warnings");
-    warn.innerHTML = "";
 
     if (seg.fail) {
       const msg = {
@@ -1631,43 +1762,40 @@ async function handleFile(file) {
         cover: "Zrna zabírají skoro celou fotku. Rozprostři je na větší plochu, ať je mezi nimi vidět miska.",
         empty: "Na fotce nejsou žádná zrna. Zkontroluj, že je vzorek celý v záběru a ostrý."
       }[seg.fail];
-      warn.innerHTML = '<div class="note bad">' + msg + "</div>";
-      marks = []; undoStack = []; grainR = 10;
+      photo = pic; marks = []; undoStack = []; grainR = 10; maskCanvas = null;
+      cv.width = w; cv.height = h;
       ctx.drawImage(photo, 0, 0);
-      document.getElementById("out-count").textContent = "0";
+      document.getElementById("warnings").innerHTML = '<div class="note bad">' + msg + "</div>";
+      document.getElementById("diag").textContent = "";
+      document.getElementById("out-count").textContent = shots.length ? usedCount() : "0";
       recalcHtz();
+      renderShots();
+      if (!shots.length) document.getElementById("next-box").classList.remove("hide");
       show("s-result");
       return;
     }
 
     const res = seg;
-    grainR = Math.max(4, res.r0);
-    marks = res.marks;
-    undoStack = [];
-    maskCanvas = res.mask ? buildMaskCanvas(res.mask, w, h) : null;
-    showMask = false;
-    document.getElementById("btn-mask").textContent = "Co appka vidí";
-    document.getElementById("diag").textContent =
+    const free = res.marks.filter(m => m.kind === "one").length / Math.max(1, res.marks.length);
+    const diag =
       "útvarů " + res.blobs + " · značek " + res.marks.length +
       " · typické zrno " + res.med.toFixed(0) + " px² (r " + res.r0.toFixed(1) + " px)" +
-      " · pokrytí " + (res.cover * 100).toFixed(1) + " % · volných " +
-      Math.round(res.marks.filter(m => m.kind === "one").length / Math.max(1, res.marks.length) * 100) +
+      " · pokrytí " + (res.cover * 100).toFixed(1) + " % · volných " + Math.round(free * 100) +
       " % · fotka " + w + "×" + h;
 
     const tips = [];
-    const n = total();
+    const n = res.marks.length;
     // How big one grain is gets measured on the grains lying on their own, so
     // the count is only as good as their share. On nine test photos of maize the
     // count was within 2 % where over a fifth lay free, and 7–26 % high where a
     // tenth did — whatever the variety, spreading the sample out is the fix.
-    const free = marks.filter(m => m.kind === "one").length;
-    const crowded = n > 0 && free / n < 0.2;
+    const crowded = n > 0 && free < FREE_MIN;
     if (crowded) {
-      tips.push("Samostatně leží jen " + Math.round(free / n * 100) + " % zrn. Velikost zrna appka měří na volně ležících zrnech, takže u nahrnutého vzorku obvykle napočítá víc, než je ve skutečnosti. <b>Rozhrň vzorek po celém dně misky a vyfoť znovu</b> — ať volně leží aspoň pětina zrn.");
+      tips.push("Samostatně leží jen " + Math.round(free * 100) + " % zrn. Velikost zrna appka měří na volně ležících zrnech, takže u nahrnutého vzorku obvykle napočítá víc, než je ve skutečnosti. <b>Rozhrň vzorek po celém dně misky a vyfoť znovu</b> — ať volně leží aspoň pětina zrn.");
     } else if (n > 0 && res.clustered / n > 0.3) {
       tips.push("Velká část zrn se dotýká. Rozdělil jsem je podle tvaru a plochy, ale u hromádek je to nejisté — projeď oranžové značky očima.");
     }
-    if (res.border > Math.max(2, marks.length * 0.08)) {
+    if (res.border > Math.max(2, n * 0.08)) {
       tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
     }
     if (seg.rim > 0) {
@@ -1676,12 +1804,17 @@ async function handleFile(file) {
     if (n < 40) {
       tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
     }
-    if (tips.length) {
-      warn.innerHTML = '<div class="note' + (crowded ? " bad" : "") + '"><strong>Zkontroluj fotku</strong><ul><li>' +
-        tips.join("</li><li>") + "</li></ul></div>";
-    }
+    const warn = tips.length
+      ? '<div class="note' + (crowded ? " bad" : "") + '"><strong>Zkontroluj fotku</strong><ul><li>' +
+        tips.join("</li><li>") + '</li></ul></div><div style="height:14px"></div>'
+      : "";
 
-    draw();
+    shots.push({
+      photo: pic, marks: res.marks, undo: [], free, diag, warn,
+      grainR: Math.max(4, res.r0),
+      mask: res.mask ? buildMaskCanvas(res.mask, w, h) : null
+    });
+    showShot(shots.length - 1);
     show("s-result");
   } catch (err) {
     document.getElementById("warnings").innerHTML =
@@ -1691,11 +1824,15 @@ async function handleFile(file) {
 }
 
 document.getElementById("in-cam").addEventListener("change", e => {
-  handleFile(e.target.files[0]);
+  handleFile(e.target.files[0], false);
   e.target.value = "";
 });
 document.getElementById("in-gal").addEventListener("change", e => {
-  handleFile(e.target.files[0]);
+  handleFile(e.target.files[0], false);
+  e.target.value = "";
+});
+document.getElementById("in-next").addEventListener("change", e => {
+  handleFile(e.target.files[0], true);
   e.target.value = "";
 });
 
@@ -1712,7 +1849,8 @@ document.getElementById("btn-save").addEventListener("click", () => {
     id: Date.now(),
     name: name || "Vzorek " + (saved.length + 1),
     crop: CROPS[crop].name,
-    count: total(),
+    count: usedCount(),
+    shots: shots.map(shotCount),
     weight: wgt,
     htz: htz,
     when: d.toLocaleDateString("cs-CZ") + " " + d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })
@@ -1720,13 +1858,14 @@ document.getElementById("btn-save").addEventListener("click", () => {
   persist();
   setWeight("", null);
   document.getElementById("in-name").value = "";
+  shots = []; cur = -1;
   renderList();
   renderRecent();
   show("s-home");
 });
 
 document.getElementById("btn-cancel").addEventListener("click", () => {
-  document.getElementById("in-name").value = "";
+  shots = []; cur = -1;
   show("s-home");
 });
 
@@ -1806,8 +1945,9 @@ function renderRecent() {
 }
 
 document.getElementById("btn-copy").addEventListener("click", async () => {
-  const txt = ["Vzorek\tPlodina\tZrn\tHmotnost (g)\tHTZ (g)\tČas"]
-    .concat(saved.map(m => [m.name, m.crop || "", m.count, fmt2(m.weight), fmt1(m.htz), m.when].join("\t")))
+  const txt = ["Vzorek\tPlodina\tZrn\tFotky (zrn)\tHmotnost (g)\tHTZ (g)\tČas"]
+    .concat(saved.map(m => [m.name, m.crop || "", m.count, (m.shots || [m.count]).join(" / "),
+                            fmt2(m.weight), fmt1(m.htz), m.when].join("\t")))
     .join("\n");
   const dump = document.getElementById("dump");
   try {
