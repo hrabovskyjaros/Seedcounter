@@ -43,14 +43,19 @@ class Camera:
     """The box camera through Picamera2. Runs in a light preview mode for the
     live view and switches to a full still for each photo."""
 
-    def __init__(self):
+    def __init__(self, rotate=False):
         from picamera2 import Picamera2  # only on the Raspberry
+        from libcamera import Transform
         self.cam = Picamera2()
+        # a camera mounted the other way round is turned in the camera itself,
+        # so the live view and the photo come out the same way up
+        self.transform = Transform(hflip=1, vflip=1) if rotate else Transform()
         self.sensor = self.cam.sensor_resolution
         sw, sh = self.sensor
         size = (PREVIEW_W, round(PREVIEW_W * sh / sw) // 2 * 2)
         # "RGB888" in Picamera2 is B, G, R in memory — what OpenCV calls BGR
-        self.preview = self.cam.create_preview_configuration(main={"format": "RGB888", "size": size})
+        self.preview = self.cam.create_preview_configuration(main={"format": "RGB888", "size": size},
+                                                            transform=self.transform)
         self.cam.configure(self.preview)
         self.cam.start()
         self.stills = {}
@@ -65,14 +70,16 @@ class Camera:
         s = min(1.0, side / max(sw, sh))
         size = (int(sw * s) // 2 * 2, int(sh * s) // 2 * 2)
         if size not in self.stills:
-            self.stills[size] = self.cam.create_still_configuration(main={"format": "RGB888", "size": size})
+            self.stills[size] = self.cam.create_still_configuration(main={"format": "RGB888", "size": size},
+                                                                         transform=self.transform)
         return self.cam.switch_mode_and_capture_array(self.stills[size], "main")
 
 
 class DemoCamera:
     """Stands in for the camera: shows one JPEG of a folder after another."""
 
-    def __init__(self, folder):
+    def __init__(self, folder, rotate=False):
+        self.rotate = rotate
         self.files = sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
         if not self.files:
             sys.exit(f"--demo: ve složce {folder} nejsou žádné fotky")
@@ -81,6 +88,8 @@ class DemoCamera:
 
     def _load(self):
         self.current = cv2.imread(str(self.files[self.i % len(self.files)]))
+        if self.rotate:
+            self.current = cv2.rotate(self.current, cv2.ROTATE_180)
 
     def preview_bgr(self):
         h, w = self.current.shape[:2]
@@ -108,7 +117,43 @@ class Station:
         self.data_dir = Path(data_dir).expanduser()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.csv_path = self.data_dir / "mereni.csv"
+        self.crop_path = self.data_dir / "vyrez.json"
+        self.crop = self._load_crop()
         threading.Thread(target=self._preview_loop, daemon=True).start()
+
+    # ── crop: the part of the frame that is tray floor, set once on the page.
+    # Kept as fractions of the frame, so it fits the live view and the photo alike.
+    def _load_crop(self):
+        try:
+            c = json.loads(self.crop_path.read_text())
+            return [float(c[k]) for k in ("x0", "y0", "x1", "y1")]
+        except Exception:
+            return None
+
+    def set_crop(self, c):
+        if not c:
+            self.crop = None
+            self.crop_path.unlink(missing_ok=True)
+            return
+        x0, y0, x1, y1 = (min(1.0, max(0.0, float(c[k]))) for k in ("x0", "y0", "x1", "y1"))
+        x0, x1 = sorted((x0, x1)); y0, y1 = sorted((y0, y1))
+        if x1 - x0 < 0.1 or y1 - y0 < 0.1:
+            raise ValueError("výřez je moc malý")
+        self.crop = [x0, y0, x1, y1]
+        self.crop_path.write_text(json.dumps(dict(zip(("x0", "y0", "x1", "y1"), self.crop))))
+
+    def cropped(self, img):
+        if not self.crop:
+            return img
+        h, w = img.shape[:2]
+        x0, y0, x1, y1 = self.crop
+        return img[round(y0 * h):round(y1 * h), round(x0 * w):round(x1 * w)]
+
+    def full_frame(self):
+        """One uncropped live frame, for drawing the crop on."""
+        with self.cam_lock:
+            bgr = self.camera.preview_bgr()
+        return cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
 
     def _preview_loop(self):
         """Encodes live-view frames, but only while someone is watching —
@@ -121,7 +166,7 @@ class Station:
             try:
                 with self.cam_lock:
                     bgr = self.camera.preview_bgr()
-                ok, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                ok, jpg = cv2.imencode(".jpg", self.cropped(bgr), [cv2.IMWRITE_JPEG_QUALITY, 75])
                 with self.frame_cv:
                     self.frame = jpg.tobytes()
                     self.seq += 1
@@ -138,8 +183,12 @@ class Station:
 
     def still(self, side):
         t0 = time.time()
+        # shoot bigger by the share the crop cuts away, so the cut-out still
+        # has about the working size
+        if self.crop:
+            side = side / max(self.crop[2] - self.crop[0], self.crop[3] - self.crop[1])
         with self.cam_lock:
-            bgr = self.camera.still_bgr(side)
+            bgr = self.cropped(self.camera.still_bgr(round(side)))
         ok, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])
         body = jpg.tobytes()
         # the last photo stays on the box, to be fetched when a count needs looking into
@@ -226,6 +275,11 @@ def make_handler(station):
                 return self.send_json({"station": True, "demo": isinstance(station.camera, DemoCamera)})
             if path == "/api/stream":
                 return self.stream()
+            if path == "/api/frame":
+                return self.send(200, station.full_frame(), "image/jpeg")
+            if path == "/api/crop":
+                c = station.crop
+                return self.send_json(dict(zip(("x0", "y0", "x1", "y1"), c)) if c else None)
             if path == "/api/still":
                 try:
                     q = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
@@ -257,6 +311,12 @@ def make_handler(station):
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
                 return self.send_json({"error": "bad json"}, 400)
+            if path == "/api/crop":
+                try:
+                    station.set_crop(body)
+                    return self.send_json({"ok": True})
+                except Exception as e:
+                    return self.send_json({"error": str(e)}, 400)
             if path == "/api/save":
                 try:
                     station.save(body)
@@ -274,8 +334,9 @@ def main():
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--data", default="~/htz-data")
     ap.add_argument("--demo", help="složka s fotkami místo kamery")
+    ap.add_argument("--otocit", action="store_true", help="otočit obraz o 180°")
     a = ap.parse_args()
-    camera = DemoCamera(a.demo) if a.demo else Camera()
+    camera = DemoCamera(a.demo, a.otocit) if a.demo else Camera(a.otocit)
     station = Station(camera, a.data)
     srv = ThreadingHTTPServer(("0.0.0.0", a.port), make_handler(station))
     srv.daemon_threads = True
