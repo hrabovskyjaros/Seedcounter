@@ -23,7 +23,7 @@ After=network.target
 [Service]
 User=$(whoami)
 WorkingDirectory=$STANICE
-ExecStart=/usr/bin/python3 $STANICE/server.py --port $PORT --data $DATA
+ExecStart=/usr/bin/python3 $STANICE/server.py --port $PORT --data $DATA --otocit
 Restart=always
 RestartSec=3
 
