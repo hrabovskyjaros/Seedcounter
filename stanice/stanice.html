@@ -2496,6 +2496,12 @@ body.station .actbar{ left:var(--side-w); }
   border-radius:10px; border:0; background:#fff; color:#111; cursor:pointer; white-space:nowrap;
 }
 #crop-bar button.ok{ background:#1F8C64; color:#fff; }
+
+/* focus slider in the side panel */
+#focus-range{ width:100%; accent-color:var(--accent); }
+.focus-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.focus-row b{ font-family:ui-monospace, Menlo, Consolas, monospace; font-variant-numeric:tabular-nums; }
+.focus-row .btn{ width:auto; min-height:36px; padding:0 12px; font-size:14px; }
 </style>
 
 <script>
@@ -2699,6 +2705,48 @@ body.station .actbar{ left:var(--side-w); }
   document.getElementById("crop-save").addEventListener("click", () => saveCrop({ points: pts }));
   document.getElementById("crop-all").addEventListener("click", () => saveCrop(null));
   document.getElementById("crop-cancel").addEventListener("click", endCrop);
+
+  /* ── focus: for a camera with a focus motor, a slider that moves the lens
+     while the live view shows the result. In a box the tray is always at the
+     same distance, so a position found once is steadier than autofocus,
+     which can settle on a hand or a tray wall. ── */
+  const focusBox = document.createElement("div");
+  focusBox.className = "card";
+  focusBox.style.display = "none";
+  focusBox.innerHTML = '<div class="label">Ostření kamery</div>' +
+    '<input type="range" id="focus-range" step="0.05">' +
+    '<div class="focus-row"><span>Poloha <b id="focus-val">—</b></span>' +
+    '<button type="button" class="btn secondary" id="focus-auto">Automaticky</button></div>' +
+    '<p class="hint">Posouvej a sleduj živý obraz vpravo, až budou zrna ostrá. Hodnota se uloží.</p>';
+  side.append(focusBox);
+  const range = focusBox.querySelector("#focus-range");
+  const fval = focusBox.querySelector("#focus-val");
+  function showFocus(st) {
+    if (!st || !st.af) { focusBox.style.display = "none"; return; }
+    focusBox.style.display = "";
+    range.min = st.min; range.max = st.max;
+    if (st.pos === null || st.pos === undefined) { fval.textContent = "automatická"; }
+    else { range.value = st.pos; fval.textContent = Number(st.pos).toFixed(2); }
+  }
+  async function sendFocus(pos) {
+    try {
+      const r = await fetch("api/focus", { method: "POST", headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ pos }) });
+      showFocus(await r.json());
+    } catch (e) { /* the next move tries again */ }
+  }
+  let focusTimer = null;
+  range.addEventListener("input", () => {
+    if (home.classList.contains("hide")) show("s-home");
+    fval.textContent = Number(range.value).toFixed(2);
+    clearTimeout(focusTimer);
+    focusTimer = setTimeout(() => sendFocus(Number(range.value)), 150);
+  });
+  focusBox.querySelector("#focus-auto").addEventListener("click", () => sendFocus(null));
+  fetch("api/focus", { cache: "no-store" }).then(r => r.json()).then(st => {
+    showFocus(st);
+    if (st && st.af && st.pos === null) range.value = Math.min(st.max, Math.max(st.min, 2));
+  }).catch(() => {});
 
   /* The live view runs only while it is on screen: on the Pi the stream's
      JPEG encoding is the heaviest thing it does. */
