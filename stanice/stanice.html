@@ -2721,12 +2721,16 @@ body.station .actbar{ left:var(--side-w); }
   side.append(focusBox);
   const range = focusBox.querySelector("#focus-range");
   const fval = focusBox.querySelector("#focus-val");
+  let digits = 2;
   function showFocus(st) {
     if (!st || !st.af) { focusBox.style.display = "none"; return; }
     focusBox.style.display = "";
-    range.min = st.min; range.max = st.max;
+    range.min = st.min; range.max = st.max; range.step = st.step || 0.05;
+    digits = (st.step || 0.05) >= 1 ? 0 : 2;
+    // a motor driven directly has no autofocus to fall back on
+    focusBox.querySelector("#focus-auto").style.display = st.auto === false ? "none" : "";
     if (st.pos === null || st.pos === undefined) { fval.textContent = "automatická"; }
-    else { range.value = st.pos; fval.textContent = Number(st.pos).toFixed(2); }
+    else { range.value = st.pos; fval.textContent = Number(st.pos).toFixed(digits); }
   }
   async function sendFocus(pos) {
     try {
@@ -2738,7 +2742,7 @@ body.station .actbar{ left:var(--side-w); }
   let focusTimer = null;
   range.addEventListener("input", () => {
     if (home.classList.contains("hide")) show("s-home");
-    fval.textContent = Number(range.value).toFixed(2);
+    fval.textContent = Number(range.value).toFixed(digits);
     clearTimeout(focusTimer);
     focusTimer = setTimeout(() => sendFocus(Number(range.value)), 150);
   });
