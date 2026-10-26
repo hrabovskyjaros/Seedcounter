@@ -54,39 +54,83 @@ class Camera:
         self.sensor = self.cam.sensor_resolution
         sw, sh = self.sensor
         size = (PREVIEW_W, round(PREVIEW_W * sh / sw) // 2 * 2)
+        # The live view must see the same field as the photo, or a crop drawn
+        # on it lands elsewhere on the photo. Some sensor modes are cut from the
+        # middle of the chip (the IMX519's 1280x720 is), so the preview is held
+        # to the smallest mode that reads the whole sensor.
+        sensor = {}
+        try:
+            full = [m for m in self.cam.sensor_modes
+                    if tuple(m["crop_limits"][2:]) == (sw, sh)]
+            if full:
+                m = min(full, key=lambda m: m["size"][0])
+                sensor = {"sensor": {"output_size": m["size"], "bit_depth": m["bit_depth"]}}
+                print(f"kamera: náhled z režimu {m['size'][0]}x{m['size'][1]} (celý snímač)", flush=True)
+        except Exception as e:
+            print("kamera: režim snímače nevybrán", repr(e), flush=True)
         # "RGB888" in Picamera2 is B, G, R in memory — what OpenCV calls BGR
-        self.preview = self.cam.create_preview_configuration(main={"format": "RGB888", "size": size},
-                                                            transform=self.transform)
+        try:
+            self.preview = self.cam.create_preview_configuration(
+                main={"format": "RGB888", "size": size}, transform=self.transform, **sensor)
+        except TypeError:   # older Picamera2 without the sensor argument
+            self.preview = self.cam.create_preview_configuration(
+                main={"format": "RGB888", "size": size}, transform=self.transform)
         self.cam.configure(self.preview)
         self.cam.start()
         self.stills = {}
-        # A camera that can focus itself (Camera Module 3, Arducam 64 Mpx) keeps
-        # focusing on the tray; one with a fixed lens just has no such control.
-        self.af = "AfMode" in self.cam.camera_controls
+        # A camera with a focus motor (IMX519, Camera Module 3) either focuses
+        # itself or holds a lens position set on the page; a fixed lens has no
+        # such control. In a box the tray is always at the same distance, so a
+        # set position is the steadier choice once found.
+        ctl = self.cam.camera_controls
+        self.af = "AfMode" in ctl and "LensPosition" in ctl
+        self.lens_range = tuple(ctl["LensPosition"][:2]) if self.af else (0.0, 0.0)
+        self.focus = None            # None = automatic, else lens position in dioptres
         if self.af:
-            from libcamera import controls
-            self.cam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+            self.cam.set_controls(self.focus_controls())
         print(f"kamera: snímač {sw}x{sh}, náhled {size[0]}x{size[1]}, ostření "
-              + ("automatické" if self.af else "pevné"), flush=True)
+              + (f"motorem {self.lens_range[0]:.1f}–{self.lens_range[1]:.1f}" if self.af else "pevné"), flush=True)
         time.sleep(1.5)  # let exposure, white balance and focus settle once
+
+    def focus_controls(self):
+        from libcamera import controls
+        if self.focus is None:
+            return {"AfMode": controls.AfModeEnum.Continuous}
+        return {"AfMode": controls.AfModeEnum.Manual, "LensPosition": float(self.focus)}
+
+    def set_focus(self, pos):
+        if not self.af:
+            raise ValueError("tahle kamera ostřit neumí")
+        self.focus = None if pos is None else min(self.lens_range[1], max(self.lens_range[0], float(pos)))
+        self.cam.set_controls(self.focus_controls())
 
     def preview_bgr(self):
         return self.cam.capture_array("main")
 
     def still_bgr(self, side):
-        if self.af:
-            # one focus pass on what is in the tray right now, then the shot
-            try:
-                self.cam.autofocus_cycle()
-            except Exception as e:
-                print("ostření: chyba", repr(e), flush=True)
         sw, sh = self.sensor
         s = min(1.0, side / max(sw, sh))
         size = (int(sw * s) // 2 * 2, int(sh * s) // 2 * 2)
         if size not in self.stills:
             self.stills[size] = self.cam.create_still_configuration(main={"format": "RGB888", "size": size},
                                                                          transform=self.transform)
-        return self.cam.switch_mode_and_capture_array(self.stills[size], "main")
+        cfg = self.stills[size]
+        if self.af:
+            if self.focus is None:
+                # one focus pass on what is in the tray now; the lens then stays put for the shot
+                try:
+                    self.cam.autofocus_cycle()
+                except Exception as e:
+                    print("ostření: chyba", repr(e), flush=True)
+                cfg["controls"] = {k: v for k, v in cfg.get("controls", {}).items()
+                                   if k not in ("AfMode", "LensPosition")}
+            else:
+                # the set position travels with the still mode, or the switch could drop it
+                cfg["controls"] = {**cfg.get("controls", {}), **self.focus_controls()}
+        img = self.cam.switch_mode_and_capture_array(cfg, "main")
+        if self.af:
+            self.cam.set_controls(self.focus_controls())   # back to the live view's focus
+        return img
 
 
 class DemoCamera:
@@ -94,6 +138,10 @@ class DemoCamera:
 
     def __init__(self, folder, rotate=False):
         self.rotate = rotate
+        # a pretend focus motor, sharp at 2.0, so the focus slider can be tried out
+        self.af = True
+        self.lens_range = (0.0, 15.0)
+        self.focus = None
         self.files = sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
         if not self.files:
             sys.exit(f"--demo: ve složce {folder} nejsou žádné fotky")
@@ -105,12 +153,22 @@ class DemoCamera:
         if self.rotate:
             self.current = cv2.rotate(self.current, cv2.ROTATE_180)
 
+    def set_focus(self, pos):
+        self.focus = None if pos is None else float(pos)
+
+    def _defocus(self, img):
+        if self.focus is None:
+            return img
+        k = int(abs(self.focus - 2.0) * 6) * 2 + 1
+        return cv2.GaussianBlur(img, (k, k), 0) if k > 1 else img
+
     def preview_bgr(self):
         h, w = self.current.shape[:2]
-        return cv2.resize(self.current, (PREVIEW_W, round(PREVIEW_W * h / w)), interpolation=cv2.INTER_AREA)
+        return self._defocus(cv2.resize(self.current, (PREVIEW_W, round(PREVIEW_W * h / w)),
+                                        interpolation=cv2.INTER_AREA))
 
     def still_bgr(self, side):
-        img = self.current
+        img = self._defocus(self.current)
         h, w = img.shape[:2]
         s = min(1.0, side / max(w, h))
         if s < 1:
@@ -133,7 +191,27 @@ class Station:
         self.csv_path = self.data_dir / "mereni.csv"
         self.crop_path = self.data_dir / "vyrez.json"
         self.crop = self._load_crop()
+        # the focus set on the page, kept across restarts
+        self.focus_path = self.data_dir / "ostreni.json"
+        if getattr(self.camera, "af", False):
+            try:
+                pos = json.loads(self.focus_path.read_text()).get("pos")
+                if pos is not None:
+                    self.camera.set_focus(pos)
+            except Exception:
+                pass
         threading.Thread(target=self._preview_loop, daemon=True).start()
+
+    def focus_state(self):
+        c = self.camera
+        if not getattr(c, "af", False):
+            return {"af": False}
+        return {"af": True, "pos": c.focus, "min": c.lens_range[0], "max": c.lens_range[1]}
+
+    def set_focus(self, pos):
+        with self.cam_lock:
+            self.camera.set_focus(pos)
+        self.focus_path.write_text(json.dumps({"pos": self.camera.focus}))
 
     # ── crop: the outline of the tray floor, four corners set once on the page.
     # Kept as fractions of the frame, so it fits the live view and the photo
@@ -310,6 +388,8 @@ def make_handler(station):
                 return self.stream()
             if path == "/api/frame":
                 return self.send(200, station.full_frame(), "image/jpeg")
+            if path == "/api/focus":
+                return self.send_json(station.focus_state())
             if path == "/api/crop":
                 c = station.crop
                 return self.send_json({"points": c} if c else None)
@@ -344,6 +424,12 @@ def make_handler(station):
                 body = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
                 return self.send_json({"error": "bad json"}, 400)
+            if path == "/api/focus":
+                try:
+                    station.set_focus(body.get("pos"))
+                    return self.send_json(station.focus_state())
+                except Exception as e:
+                    return self.send_json({"error": str(e)}, 400)
             if path == "/api/crop":
                 try:
                     station.set_crop(body)
