@@ -9,7 +9,7 @@ PORT=8080
 
 echo "== 1/4 Instaluji knihovny (kamera, OpenCV) =="
 sudo apt-get update
-sudo apt-get install -y python3-picamera2 python3-opencv python3-numpy
+sudo apt-get install -y python3-picamera2 python3-opencv python3-numpy v4l-utils
 
 echo "== 2/4 Složka na měření: $DATA =="
 mkdir -p "$DATA"
