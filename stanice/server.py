@@ -16,6 +16,7 @@ station out on a computer without one.
 import argparse
 import csv
 import json
+import subprocess
 import sys
 import threading
 import time
@@ -37,6 +38,25 @@ STATIC = {
 }
 PREVIEW_W = 1280      # live view width
 PREVIEW_FPS = 8
+DEFAULT_VCM = 1550    # IMX519 lens motor position found sharp for a tray 49 cm below
+
+
+def find_focus_subdev():
+    """The V4L2 subdevice that drives a lens motor, and its top value; (None, 0) if none."""
+    for dev in sorted(Path("/dev").glob("v4l-subdev*")):
+        try:
+            out = subprocess.run(["v4l2-ctl", "-d", str(dev), "-l"], capture_output=True,
+                                 text=True, timeout=5).stdout
+        except Exception:
+            return None, 0          # no v4l2-ctl at all
+        for line in out.splitlines():
+            if "focus_absolute" in line:
+                top = 4095
+                for part in line.split():
+                    if part.startswith("max="):
+                        top = int(part[4:])
+                return str(dev), top
+    return None, 0
 CSV_FIELDS = ["Pokus", "Vzorek", "Plodina", "Zrn", "Fotky (zrn)", "Hmotnost (g)", "HTZ (g)", "Čas"]
 
 
@@ -82,14 +102,26 @@ class Camera:
         # itself or holds a lens position set on the page; a fixed lens has no
         # such control. In a box the tray is always at the same distance, so a
         # set position is the steadier choice once found.
+        # Two ways to move a focus motor. Where the system has a focus subdevice
+        # (the IMX519's AK7375), the lens is driven there directly: on a Pi 3B+
+        # libcamera has no focus algorithm for the IMX519 and silently ignores
+        # LensPosition. Otherwise libcamera's own controls (Camera Module 3).
+        self.vcm, vcm_max = find_focus_subdev()
         ctl = self.cam.camera_controls
-        self.af = "AfMode" in ctl and "LensPosition" in ctl
-        self.lens_range = tuple(ctl["LensPosition"][:2]) if self.af else (0.0, 0.0)
-        self.focus = None            # None = automatic, else lens position in dioptres
+        if self.vcm:
+            self.af, self.auto = True, False
+            self.lens_range = (0.0, float(vcm_max))
+            self.focus = DEFAULT_VCM
+        else:
+            self.af = "AfMode" in ctl and "LensPosition" in ctl
+            self.auto = self.af
+            self.lens_range = tuple(ctl["LensPosition"][:2]) if self.af else (0.0, 0.0)
+            self.focus = None        # None = automatic, else lens position in dioptres
         if self.af:
-            self.cam.set_controls(self.focus_controls())
+            self.apply_focus()
         print(f"kamera: snímač {sw}x{sh}, náhled {size[0]}x{size[1]}, ostření "
-              + (f"motorem {self.lens_range[0]:.1f}–{self.lens_range[1]:.1f}" if self.af else "pevné"), flush=True)
+              + (f"motorem přes {self.vcm} (0–{vcm_max})" if self.vcm
+                 else f"motorem {self.lens_range[0]:.1f}–{self.lens_range[1]:.1f}" if self.af else "pevné"), flush=True)
         time.sleep(1.5)  # let exposure, white balance and focus settle once
 
     def focus_controls(self):
@@ -98,11 +130,21 @@ class Camera:
             return {"AfMode": controls.AfModeEnum.Continuous}
         return {"AfMode": controls.AfModeEnum.Manual, "LensPosition": float(self.focus)}
 
+    def apply_focus(self):
+        if self.vcm:
+            if self.focus is not None:
+                subprocess.run(["v4l2-ctl", "-d", self.vcm, "--set-ctrl", f"focus_absolute={int(self.focus)}"],
+                               capture_output=True, timeout=5)
+        else:
+            self.cam.set_controls(self.focus_controls())
+
     def set_focus(self, pos):
         if not self.af:
             raise ValueError("tahle kamera ostřit neumí")
+        if pos is None and not self.auto:
+            raise ValueError("tahle kamera automaticky neostří")
         self.focus = None if pos is None else min(self.lens_range[1], max(self.lens_range[0], float(pos)))
-        self.cam.set_controls(self.focus_controls())
+        self.apply_focus()
 
     def preview_bgr(self):
         return self.cam.capture_array("main")
@@ -115,6 +157,12 @@ class Camera:
             self.stills[size] = self.cam.create_still_configuration(main={"format": "RGB888", "size": size},
                                                                          transform=self.transform)
         cfg = self.stills[size]
+        if self.vcm:
+            # the motor holds its place; set it again in case the mode switch reset it
+            self.apply_focus()
+            img = self.cam.switch_mode_and_capture_array(cfg, "main")
+            self.apply_focus()
+            return img
         if self.af:
             if self.focus is None:
                 # one focus pass on what is in the tray now; the lens then stays put for the shot
@@ -138,10 +186,11 @@ class DemoCamera:
 
     def __init__(self, folder, rotate=False):
         self.rotate = rotate
-        # a pretend focus motor, sharp at 2.0, so the focus slider can be tried out
-        self.af = True
-        self.lens_range = (0.0, 15.0)
-        self.focus = None
+        # a pretend focus motor like the IMX519's, sharp at DEFAULT_VCM, so the
+        # focus slider can be tried out
+        self.af, self.auto = True, False
+        self.lens_range = (0.0, 4095.0)
+        self.focus = DEFAULT_VCM
         self.files = sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
         if not self.files:
             sys.exit(f"--demo: ve složce {folder} nejsou žádné fotky")
@@ -159,7 +208,7 @@ class DemoCamera:
     def _defocus(self, img):
         if self.focus is None:
             return img
-        k = int(abs(self.focus - 2.0) * 6) * 2 + 1
+        k = int(abs(self.focus - DEFAULT_VCM) / 60) * 2 + 1
         return cv2.GaussianBlur(img, (k, k), 0) if k > 1 else img
 
     def preview_bgr(self):
@@ -194,10 +243,12 @@ class Station:
         # the focus set on the page, kept across restarts
         self.focus_path = self.data_dir / "ostreni.json"
         if getattr(self.camera, "af", False):
+            # a saved position counts only for the same kind of focus control:
+            # a lens position from libcamera (0–15) means nothing to a motor (0–4095)
             try:
-                pos = json.loads(self.focus_path.read_text()).get("pos")
-                if pos is not None:
-                    self.camera.set_focus(pos)
+                saved = json.loads(self.focus_path.read_text())
+                if saved.get("unit") == self.focus_unit() and (saved.get("pos") is not None or self.camera.auto):
+                    self.camera.set_focus(saved.get("pos"))
             except Exception:
                 pass
         threading.Thread(target=self._preview_loop, daemon=True).start()
@@ -206,12 +257,17 @@ class Station:
         c = self.camera
         if not getattr(c, "af", False):
             return {"af": False}
-        return {"af": True, "pos": c.focus, "min": c.lens_range[0], "max": c.lens_range[1]}
+        return {"af": True, "auto": getattr(c, "auto", True), "pos": c.focus,
+                "min": c.lens_range[0], "max": c.lens_range[1],
+                "step": 1 if c.lens_range[1] > 100 else 0.05}
+
+    def focus_unit(self):
+        return "motor" if getattr(self.camera, "lens_range", (0, 0))[1] > 100 else "dioptrie"
 
     def set_focus(self, pos):
         with self.cam_lock:
             self.camera.set_focus(pos)
-        self.focus_path.write_text(json.dumps({"pos": self.camera.focus}))
+        self.focus_path.write_text(json.dumps({"pos": self.camera.focus, "unit": self.focus_unit()}))
 
     # ── crop: the outline of the tray floor, four corners set once on the page.
     # Kept as fractions of the frame, so it fits the live view and the photo
