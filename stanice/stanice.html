@@ -2497,6 +2497,24 @@ body.station .actbar{ left:var(--side-w); }
 }
 #crop-bar button.ok{ background:#1F8C64; color:#fff; }
 
+/* result: the photo gets the screen. A slim count/HTZ strip above it, the
+   save/cancel buttons in the free space at its right, the legend and the
+   rest below the fold. The photo-tips page is for the iPad, not the box. */
+body.station #go-help{ display:none !important; }
+body.station .readout .cell{ flex-direction:row; align-items:baseline; gap:14px; padding:8px 16px; }
+body.station .readout .num{ font-size:26px; }
+body.station #s-result .shot:not(.full){ padding-right:250px; background:none; border:0; }
+body.station #s-result .shot:not(.full) canvas{ max-height:calc(100vh - 110px); margin:0 auto; }
+body.station .actbar{
+  left:auto; right:32px; bottom:auto; top:50%; width:220px; padding:0;
+  transform:translate(calc(100% + 40px), -50%);
+}
+body.station .actbar.up{ transform:translateY(-50%); }
+body.station .actbar .in{ flex-direction:column-reverse; }
+body.station .actbar .btn{ text-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
+body.station .actbar .btn.glass-save{ flex:none; min-height:72px; background:var(--accent); color:var(--accent-ink); border-color:transparent; }
+body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); color:var(--danger); border:1px solid var(--line-strong); }
+
 /* the buttons sit above the frame, never over the corners */
 #live.cropping{ flex-direction:column; gap:10px; padding:12px; cursor:default; }
 #live.cropping #crop-bar{ position:static; transform:none; order:-1; flex-wrap:wrap; justify-content:center; }
