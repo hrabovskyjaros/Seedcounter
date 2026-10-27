@@ -2463,7 +2463,7 @@ body.station #s-home:not(.hide){ display:flex; }
 body.station #s-home > :not(#live){ display:none !important; }
 #live{
   position:relative; flex:1; min-height:0;
-  background:#000; border-radius:var(--radius); overflow:hidden;
+  background:var(--panel-2); border-radius:var(--radius); overflow:hidden;
   display:flex; align-items:center; justify-content:center; cursor:pointer;
 }
 #live img{ max-width:100%; max-height:100%; object-fit:contain; display:block; }
@@ -2501,10 +2501,15 @@ body.station .actbar{ left:var(--side-w); }
    save/cancel buttons in the free space at its right, the legend and the
    rest below the fold. The photo-tips page is for the iPad, not the box. */
 body.station #go-help{ display:none !important; }
-body.station .readout .cell{ flex-direction:row; align-items:baseline; gap:14px; padding:8px 16px; }
-body.station .readout .num{ font-size:26px; }
+/* count and HTZ stand in the right column just above the buttons */
+body.station #s-result .readout{
+  position:fixed; right:32px; width:220px; bottom:calc(50% + 90px); z-index:40;
+  grid-template-columns:1fr; box-shadow:var(--shadow);
+}
+body.station #s-result .readout + div{ display:none; }   /* its spacer */
+body.station .readout .num{ font-size:38px; }
 body.station #s-result .shot:not(.full){ padding-right:250px; background:none; border:0; }
-body.station #s-result .shot:not(.full) canvas{ max-height:calc(100vh - 110px); margin:0 auto; }
+body.station #s-result .shot:not(.full) canvas{ max-height:calc(100vh - 40px); margin:0 auto; }
 body.station .actbar{
   left:auto; right:32px; bottom:auto; top:50%; width:220px; padding:0;
   transform:translate(calc(100% + 40px), -50%);
@@ -2524,6 +2529,7 @@ body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); colo
 .gear-btn[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); border-color:transparent; }
 .settings{ display:flex; flex-direction:column; gap:14px; }
 .settings.hide{ display:none; }
+#side.in-settings > :not(.masthead):not(.ticks):not(.settings){ display:none !important; }
 .set-head{ display:flex; align-items:center; justify-content:space-between; }
 .set-close{ border:0; background:none; color:var(--muted); font-size:18px; cursor:pointer; padding:4px 6px; }
 .set-block{ display:flex; flex-direction:column; gap:8px; }
@@ -2940,6 +2946,7 @@ body.station #crops, body.station #crop-tip{ display:none !important; }
   document.querySelector("#side .ticks").after(settings);
   function toggleSettings(open) {
     settings.classList.toggle("hide", !open);
+    side.classList.toggle("in-settings", open);   // the sample fields step aside meanwhile
     gear.setAttribute("aria-pressed", String(open));
     gear.blur();
   }
