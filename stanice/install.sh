@@ -7,14 +7,34 @@ STANICE="$(cd "$(dirname "$0")" && pwd)"
 DATA="$HOME/htz-data"
 PORT=8080
 
-echo "== 1/4 Instaluji knihovny (kamera, OpenCV) =="
+echo "== 1/5 Instaluji knihovny (kamera, OpenCV, sdílení složky) =="
 sudo apt-get update
-sudo apt-get install -y python3-picamera2 python3-opencv python3-numpy v4l-utils
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-picamera2 python3-opencv python3-numpy v4l-utils samba
 
-echo "== 2/4 Složka na měření: $DATA =="
+echo "== 2/5 Složka na měření: $DATA =="
 mkdir -p "$DATA"
 
-echo "== 3/4 Server stanice se spustí sám po každém zapnutí =="
+echo "== 3/5 Složka s měřeními jako síťový disk pro Windows (\\\\IP\\htz) =="
+# Read-only, so Excel on the PC can never lock or overwrite the box's CSV.
+# Windows 11 refuses guest access, hence a Samba login for this user.
+if ! grep -q "^\[htz\]" /etc/samba/smb.conf; then
+  sudo tee -a /etc/samba/smb.conf >/dev/null <<EOF
+
+[htz]
+   comment = HTZ mereni
+   path = $DATA
+   read only = yes
+   valid users = $(whoami)
+EOF
+fi
+if ! sudo pdbedit -L 2>/dev/null | grep -q "^$(whoami):"; then
+  echo "Zadej heslo pro síťový disk (stačí stejné jako do Raspberry), dvakrát:"
+  sudo smbpasswd -a "$(whoami)"
+fi
+sudo systemctl enable smbd
+sudo systemctl restart smbd
+
+echo "== 4/5 Server stanice se spustí sám po každém zapnutí =="
 sudo tee /etc/systemd/system/htz-stanice.service >/dev/null <<EOF
 [Unit]
 Description=HTZ stanice (pocitani zrn)
@@ -34,7 +54,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable htz-stanice
 sudo systemctl restart htz-stanice
 
-echo "== 4/4 Zástupce na ploše (appka se ovládá z počítače s Windows) =="
+echo "== 5/5 Zástupce na ploše (appka se ovládá z počítače s Windows) =="
 # The Pi only takes the photos; the screen is on the Windows computer. The app
 # no longer opens here at login — Chromium on a Pi 3B+ was the slow part.
 rm -f "$HOME/.config/autostart/htz-stanice.desktop"
@@ -57,6 +77,7 @@ if systemctl is-active --quiet htz-stanice; then
   echo "  Na počítači s Windows otevři v Chrome nebo Edge:"
   echo "      http://$(hostname).local:$PORT   nebo   http://$(hostname -I | awk '{print $1}'):$PORT"
   echo "  Měření se ukládají i sem: $DATA/mereni.csv"
+  echo "  Ve Windows jako síťový disk: \\\\$(hostname -I | awk '{print $1}')\\htz   (jméno $(whoami))"
 else
   echo
   echo "POZOR: server stanice neběží. Poslední zprávy:"
