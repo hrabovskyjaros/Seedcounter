@@ -2497,6 +2497,38 @@ body.station .actbar{ left:var(--side-w); }
 }
 #crop-bar button.ok{ background:#1F8C64; color:#fff; }
 
+/* the buttons sit above the frame, never over the corners */
+#live.cropping{ flex-direction:column; gap:10px; padding:12px; cursor:default; }
+#live.cropping #crop-bar{ position:static; transform:none; order:-1; flex-wrap:wrap; justify-content:center; }
+#live.cropping img{ max-height:calc(100% - 62px); min-height:0; }
+
+/* crop: one drop-down instead of six buttons; the tip shows on hover */
+body.station #crops, body.station #crop-tip{ display:none !important; }
+.crop-pick{ position:relative; }
+.crop-cur{
+  width:100%; display:flex; align-items:center; justify-content:space-between;
+  font:inherit; font-size:18px; font-weight:700; min-height:50px; padding:0 16px;
+  border-radius:12px; border:0; background:var(--accent); color:var(--accent-ink); cursor:pointer;
+}
+.crop-list{
+  position:absolute; left:0; right:0; top:calc(100% + 6px); z-index:20; display:none;
+  background:var(--panel); color:var(--ink); border:1px solid var(--line-strong); border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,.18); padding:6px;
+}
+.crop-pick.open .crop-list{ display:block; }
+.crop-opt{
+  display:block; width:100%; text-align:left; font:inherit; font-size:16px; font-weight:600;
+  padding:10px 12px; border:0; border-radius:8px; background:none; color:inherit; cursor:pointer;
+}
+.crop-opt:hover{ background:var(--accent-soft); }
+.crop-opt[aria-pressed="true"]{ color:var(--accent); }
+.crop-pop{
+  position:fixed; z-index:30; display:none; max-width:300px;
+  background:#1d2a25; color:#fff; font-size:14px; line-height:1.45;
+  padding:10px 13px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.25); pointer-events:none;
+}
+.crop-pop.on{ display:block; }
+
 /* focus slider in the side panel */
 #focus-range{ width:100%; accent-color:var(--accent); }
 .focus-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -2553,6 +2585,68 @@ body.station .actbar{ left:var(--side-w); }
     cards[0], cards[2],
     document.getElementById("home-recent"), document.getElementById("go-help")
   );
+
+  /* ── crop: one drop-down instead of six buttons always on show; the "how
+     much to pour" tip appears only after the mouse rests on a crop ── */
+  const pick = document.createElement("div");
+  pick.className = "crop-pick";
+  pick.innerHTML = '<button type="button" class="crop-cur"></button><div class="crop-list"></div>';
+  const pop = document.createElement("div");
+  pop.className = "crop-pop";
+  document.body.append(pop);
+  cards[0].append(pick);
+  const cur = pick.querySelector(".crop-cur"), list = pick.querySelector(".crop-list");
+  let popTimer = null;
+  function tipFor(k) {
+    const c = CROPS[k];
+    return "<b>" + c.name + "</b>: nasyp " + c.scoop + (c.approx ? " (" + c.approx + ")" : "") +
+           ", zvaž a rozprostři do plochy zhruba " + c.area + "." +
+           (c.photos > 1 ? " Když leží volně aspoň polovina zrn, stačí jedna fotka; jinak appka vyzve k další." : "");
+  }
+  function hoverTip(el, k) {
+    el.addEventListener("mouseenter", () => {
+      clearTimeout(popTimer);
+      popTimer = setTimeout(() => {
+        const r = el.getBoundingClientRect();
+        pop.innerHTML = tipFor(typeof k === "function" ? k() : k);
+        pop.style.left = (r.right + 10) + "px";
+        pop.style.top = r.top + "px";
+        pop.classList.add("on");
+      }, 600);
+    });
+    el.addEventListener("mouseleave", () => { clearTimeout(popTimer); pop.classList.remove("on"); });
+  }
+  function renderPick() {
+    cur.innerHTML = CROPS[crop].name + "<span>▾</span>";
+    list.innerHTML = "";
+    Object.keys(CROPS).forEach(k => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "crop-opt";
+      b.textContent = CROPS[k].name;
+      b.setAttribute("aria-pressed", String(k === crop));
+      b.addEventListener("click", () => {
+        crop = k;
+        try { localStorage.setItem(CROP_KEY, k); } catch (e) { /* ignore */ }
+        renderCrops();
+        renderPick();
+        closePick();
+      });
+      hoverTip(b, k);
+      list.append(b);
+    });
+  }
+  function closePick() {
+    pick.classList.remove("open");
+    clearTimeout(popTimer);
+    pop.classList.remove("on");
+    cur.blur();   // so Enter shoots again instead of reopening the list
+  }
+  cur.addEventListener("click", () => pick.classList.toggle("open"));
+  hoverTip(cur, () => crop);
+  document.addEventListener("click", ev => { if (!pick.contains(ev.target)) closePick(); });
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") closePick(); });
+  renderPick();
 
   const live = document.createElement("div");
   live.id = "live";
