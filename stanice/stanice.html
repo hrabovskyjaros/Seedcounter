@@ -2458,17 +2458,20 @@ body.station #side{
 }
 body.station .wrap > section{
   grid-column:2; grid-row:1; min-width:0; height:100vh; overflow:auto; padding:16px;
+  scrollbar-gutter:stable;   /* live view and result photo line up exactly */
 }
 body.station #s-home:not(.hide){ display:flex; }
 body.station #s-home > :not(#live){ display:none !important; }
 #live{
   position:relative; flex:1; min-height:0;
   background:var(--panel-2); border-radius:var(--radius); overflow:hidden;
+  /* the same box the result photo gets, so the picture does not jump */
+  padding:0 250px 8px 0; align-items:flex-start;
   display:flex; align-items:center; justify-content:center; cursor:pointer;
 }
 #live img{ max-width:100%; max-height:100%; object-fit:contain; display:block; }
 #live .live-hint{
-  position:absolute; left:50%; bottom:16px; transform:translateX(-50%);
+  position:absolute; left:calc(50% - 125px); bottom:16px; transform:translateX(-50%);
   background:rgba(0,0,0,.6); color:#fff; padding:9px 16px; border-radius:999px;
   font-weight:600; font-size:15px; white-space:nowrap; pointer-events:none;
 }
@@ -2503,7 +2506,7 @@ body.station .actbar{ left:var(--side-w); }
 body.station #go-help{ display:none !important; }
 /* count and HTZ stand in the right column just above the buttons */
 body.station #s-result .readout{
-  position:fixed; right:32px; width:220px; bottom:calc(50% + 90px); z-index:40;
+  position:fixed; right:32px; width:220px; top:16px; z-index:40;
   grid-template-columns:1fr; box-shadow:var(--shadow);
 }
 body.station #s-result .readout + div{ display:none; }   /* its spacer */
@@ -2511,10 +2514,10 @@ body.station .readout .num{ font-size:38px; }
 body.station #s-result .shot:not(.full){ padding-right:250px; background:none; border:0; }
 body.station #s-result .shot:not(.full) canvas{ max-height:calc(100vh - 40px); margin:0 auto; }
 body.station .actbar{
-  left:auto; right:32px; bottom:auto; top:50%; width:220px; padding:0;
-  transform:translate(calc(100% + 40px), -50%);
+  left:auto; right:32px; bottom:24px; top:auto; width:220px; padding:0;
+  transform:translateX(calc(100% + 40px));
 }
-body.station .actbar.up{ transform:translateY(-50%); }
+body.station .actbar.up{ transform:none; }
 body.station .actbar .in{ flex-direction:column-reverse; }
 body.station .actbar .btn{ text-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
 body.station .actbar .btn.glass-save{ flex:none; min-height:72px; background:var(--accent); color:var(--accent-ink); border-color:transparent; }
