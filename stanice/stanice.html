@@ -2515,6 +2515,26 @@ body.station .actbar .btn{ text-shadow:none; backdrop-filter:none; -webkit-backd
 body.station .actbar .btn.glass-save{ flex:none; min-height:72px; background:var(--accent); color:var(--accent-ink); border-color:transparent; }
 body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); color:var(--danger); border:1px solid var(--line-strong); }
 
+/* settings behind the gear in the header */
+.gear-btn{
+  margin-left:auto; margin-right:10px; align-self:center; width:38px; height:38px; border-radius:50%;
+  border:1px solid var(--line-strong); background:var(--panel); color:var(--ink);
+  font-size:19px; line-height:1; cursor:pointer;
+}
+.gear-btn[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); border-color:transparent; }
+.settings{ display:flex; flex-direction:column; gap:14px; }
+.settings.hide{ display:none; }
+.set-head{ display:flex; align-items:center; justify-content:space-between; }
+.set-close{ border:0; background:none; color:var(--muted); font-size:18px; cursor:pointer; padding:4px 6px; }
+.set-block{ display:flex; flex-direction:column; gap:8px; }
+.set-block .hint{ margin:0; }
+.seg{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.seg button{
+  font:inherit; font-size:15px; font-weight:600; min-height:42px; border-radius:10px; cursor:pointer;
+  border:1px solid var(--line-strong); background:var(--panel); color:var(--ink);
+}
+.seg button[aria-pressed="true"]{ background:var(--accent); color:var(--accent-ink); border-color:transparent; }
+
 /* the buttons sit above the frame, never over the corners */
 #live.cropping{ flex-direction:column; gap:10px; padding:12px; cursor:default; }
 #live.cropping #crop-bar{ position:static; transform:none; order:-1; flex-wrap:wrap; justify-content:center; }
@@ -2587,6 +2607,34 @@ body.station #crops, body.station #crop-tip{ display:none !important; }
       show("s-result");
     }
   };
+
+  /* ── light or dark, as each user likes it; until someone picks, the page
+     follows Windows. Kept per browser. ── */
+  const THEME_KEY = "htz-stanice-theme";
+  const darkOS = window.matchMedia("(prefers-color-scheme: dark)");
+  let theme = null;
+  try { theme = localStorage.getItem(THEME_KEY); } catch (e) { /* ignore */ }
+  const themeSeg = document.createElement("div");   // shown in the settings
+  themeSeg.className = "seg";
+  themeSeg.innerHTML = '<button type="button" data-t="light">☀ Světlý</button>' +
+                       '<button type="button" data-t="dark">☾ Tmavý</button>';
+  function isDark() { return theme ? theme === "dark" : darkOS.matches; }
+  function applyTheme() {
+    if (theme) document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+    themeSeg.querySelectorAll("button").forEach(b =>
+      b.setAttribute("aria-pressed", String((b.dataset.t === "dark") === isDark())));
+  }
+  themeSeg.addEventListener("click", ev => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    theme = b.dataset.t;
+    try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignore */ }
+    applyTheme();
+    b.blur();   // Enter shoots, it must not press this again
+  });
+  darkOS.addEventListener("change", applyTheme);
+  applyTheme();
 
   if (window.innerWidth < 900) return;   // a narrow screen keeps the one-column app
 
@@ -2863,6 +2911,40 @@ body.station #crops, body.station #crop-tip{ display:none !important; }
     showFocus(st);
     if (st && st.af && st.pos === null) range.value = Math.min(st.max, Math.max(st.min, 2));
   }).catch(() => {});
+
+  /* ── settings: what is set once rather than for every sample sits behind
+     the gear in the header — focus, crop, light/dark, all measurements ── */
+  const gear = document.createElement("button");
+  gear.type = "button";
+  gear.className = "gear-btn";
+  gear.textContent = "⚙";
+  gear.title = "Nastavení";
+  document.querySelector(".masthead .sub").before(gear);
+  const settings = document.createElement("div");
+  settings.className = "card settings hide";
+  settings.innerHTML = '<div class="set-head"><div class="label">Nastavení</div>' +
+                       '<button type="button" class="set-close" title="Zavřít">✕</button></div>';
+  focusBox.className = "set-block";
+  const themeBlock = document.createElement("div");
+  themeBlock.className = "set-block";
+  themeBlock.innerHTML = '<div class="label">Vzhled</div>';
+  themeBlock.append(themeSeg);
+  const csv = document.createElement("a");
+  csv.className = "btn secondary";
+  csv.href = "api/export.csv";
+  csv.setAttribute("download", "");
+  csv.style.textDecoration = "none";
+  csv.textContent = "Stáhnout všechna měření (CSV)";
+  cropBtn.className = "btn secondary";
+  settings.append(focusBox, cropBtn, themeBlock, csv);
+  document.querySelector("#side .ticks").after(settings);
+  function toggleSettings(open) {
+    settings.classList.toggle("hide", !open);
+    gear.setAttribute("aria-pressed", String(open));
+    gear.blur();
+  }
+  gear.addEventListener("click", () => toggleSettings(settings.classList.contains("hide")));
+  settings.querySelector(".set-close").addEventListener("click", () => toggleSettings(false));
 
   /* The live view runs only while it is on screen: on the Pi the stream's
      JPEG encoding is the heaviest thing it does. */
