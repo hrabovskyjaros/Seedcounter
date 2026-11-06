@@ -1144,11 +1144,11 @@ function components(mask, w, h) {
     let sp = 0;
     stack[sp++] = start;
     label[start] = id;
-    let area = 0, sx = 0, sy = 0;
+    let area = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
     let x0 = w, y0 = h, x1 = 0, y1 = 0;
     while (sp > 0) {
       const i = stack[--sp], x = i % w, y = (i / w) | 0;
-      area++; sx += x; sy += y;
+      area++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
       if (x < x0) x0 = x;
       if (x > x1) x1 = x;
       if (y < y0) y0 = y;
@@ -1164,7 +1164,12 @@ function components(mask, w, h) {
         }
       }
     }
-    blobs.push({ id, area, cx: sx / area, cy: sy / area, x0, y0, x1, y1,
+    // elongation: length over width of the ellipse with the same second moments
+    const cx = sx / area, cy = sy / area;
+    const a = sxx / area - cx * cx, c = syy / area - cy * cy, d = sxy / area - cx * cy;
+    const t = Math.sqrt((a - c) * (a - c) / 4 + d * d);
+    const elong = Math.sqrt(((a + c) / 2 + t) / Math.max((a + c) / 2 - t, 0.25));
+    blobs.push({ id, area, cx, cy, x0, y0, x1, y1, elong,
                  border: x0 === 0 || y0 === 0 || x1 === w - 1 || y1 === h - 1 });
   }
   return { blobs, label };
@@ -1378,6 +1383,11 @@ function segment(imgData, w, h) {
     // ten checked photos every such blob was one, while the smallest real
     // kernels and halves measured 0.38 of a grain and up.
     if (b.area < Math.max(floor, med * 0.35)) return false;
+    // A sliver of pod or glume: no bigger than a grain, yet many times longer
+    // than wide. Soy beans measure up to 1.5 and wheat kernels about 2.5; a
+    // soy pod sliver that came out as a grain measured 6. Two grains touching
+    // end to end are long too, but have the area of two, so they stay.
+    if (b.elong > 3.5 && b.area < med * 1.5) return false;
     if (offTray[b.id]) { rim++; return false; }
     if (b.border && b.area > med * 8) { rim++; return false; }
     return true;
@@ -2147,10 +2157,13 @@ async function stationShoot(append) {
   setBusy("Fotím a počítám…");
   show("s-busy");
   try {
+    // a station that hangs must not leave the spinner up for ever
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 90000);
     const r = await fetch("api/shoot", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ side: CROPS[crop].side })
-    });
+      body: JSON.stringify({ side: CROPS[crop].side }), signal: ctl.signal
+    }).finally(() => clearTimeout(timer));
     const seg = await r.json();
     if (!r.ok || seg.error) throw new Error(seg.error || r.status);
     const w = seg.w, h = seg.h;
