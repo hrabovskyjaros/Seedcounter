@@ -1415,6 +1415,10 @@ const PEAK_MIN_FRAC = 0.52;   // a peak must be this deep inside the shape, rela
 const PEAK_DIST_FRAC = 0.85;  // never put two centres closer together than this
 const SADDLE_FRAC = 0.10;     // how deep the valley between two centres must be
 const AREA_ROUND = 0.35;      // 1.65 grains of area still counts as one
+// Round seeds differ more in size (a big soy bean is 1.6 of a small one) and
+// the shape already splits them reliably, so area only adds a seed from 1.8:
+// at 1.65 a big bean touching a small one came out as three, on three photos.
+const AREA_ROUND_SEED = 0.2;
 
 /**
  * Do two candidate centres belong to the same grain?
@@ -1569,7 +1573,7 @@ function toMarks(seg, opts = {}) {
   let split = 0, border = 0;
   for (const b of kept) {
     let peaks = peaksOf.get(b.id);
-    const byArea = Math.floor(b.area / unit + AREA_ROUND);
+    const byArea = Math.floor(b.area / unit + (opts.round ? AREA_ROUND_SEED : AREA_ROUND));
     if (byArea > peaks.length) peaks = spreadCentres(pix, starts[b.id], starts[b.id + 1], w, peaks, byArea);
 
     if (peaks.length > 1) split += peaks.length;
