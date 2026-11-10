@@ -637,7 +637,6 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div class="card">
       <div class="label">Plodina</div>
       <div class="crops" id="crops"></div>
-      <div class="note info" id="crop-tip"></div>
     </div>
 
     <div style="height:14px"></div>
@@ -879,9 +878,18 @@ function persist() {
    2 mm seeds, and which HTZ result is physically believable.
    ═══════════════════════════════════════════════════════════ */
 const CROPS = {
-  wheat:  { name: "Pšenice",  scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
-  barley: { name: "Ječmen",   scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
+  // winter and spring forms count alike but are kept apart so the records
+  // filter by crop; the old keys stay the winter form so a crop remembered
+  // from before still loads
+  wheat:  { name: "Pšenice ozimá", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  wheat_spring: { name: "Pšenice jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  triticale: { name: "Tritikale ozimé", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400 },
+  triticale_spring: { name: "Tritikale jarní", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400 },
+  rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
+  barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
+  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000 },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true },
   maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
@@ -906,12 +914,6 @@ function renderCrops() {
     });
     box.append(b);
   });
-  const c = CROPS[crop];
-  document.getElementById("crop-tip").innerHTML =
-    "Nasyp <b>" + c.scoop + "</b>" + (c.approx ? " (" + c.approx + ")" : "") +
-    ", <b>zvaž ji</b> a rozprostři v misce do plochy zhruba <b>" + c.area +
-    "</b>. Přesnou hmotnost trefovat nemusíš — stačí ji přesně zvážit." +
-    (c.photos > 1 ? " Když bude volně ležet aspoň polovina zrn, stačí <b>jedna fotka</b>; jinak tě appka vyzve k druhé." : "");
 }
 
 /* ══════════════════════════════════════════════════════════════

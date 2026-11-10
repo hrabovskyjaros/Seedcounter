@@ -637,7 +637,6 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div class="card">
       <div class="label">Plodina</div>
       <div class="crops" id="crops"></div>
-      <div class="note info" id="crop-tip"></div>
     </div>
 
     <div style="height:14px"></div>
@@ -879,9 +878,18 @@ function persist() {
    2 mm seeds, and which HTZ result is physically believable.
    ═══════════════════════════════════════════════════════════ */
 const CROPS = {
-  wheat:  { name: "Pšenice",  scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
-  barley: { name: "Ječmen",   scoop: "1 polévkovou lžíci",  approx: "~10 g",  area: "A4", lo: 25,  hi: 65,  side: 2400 },
+  // winter and spring forms count alike but are kept apart so the records
+  // filter by crop; the old keys stay the winter form so a crop remembered
+  // from before still loads
+  wheat:  { name: "Pšenice ozimá", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  wheat_spring: { name: "Pšenice jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  triticale: { name: "Tritikale ozimé", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400 },
+  triticale_spring: { name: "Tritikale jarní", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400 },
+  rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
+  barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
+  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000 },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true },
   maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
@@ -906,12 +914,6 @@ function renderCrops() {
     });
     box.append(b);
   });
-  const c = CROPS[crop];
-  document.getElementById("crop-tip").innerHTML =
-    "Nasyp <b>" + c.scoop + "</b>" + (c.approx ? " (" + c.approx + ")" : "") +
-    ", <b>zvaž ji</b> a rozprostři v misce do plochy zhruba <b>" + c.area +
-    "</b>. Přesnou hmotnost trefovat nemusíš — stačí ji přesně zvážit." +
-    (c.photos > 1 ? " Když bude volně ležet aspoň polovina zrn, stačí <b>jedna fotka</b>; jinak tě appka vyzve k druhé." : "");
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -2586,7 +2588,7 @@ body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); colo
 #live.cropping img{ max-height:calc(100% - 62px); min-height:0; }
 
 /* crop: one drop-down instead of six buttons; the tip shows on hover */
-body.station #crops, body.station #crop-tip{ display:none !important; }
+body.station #crops{ display:none !important; }
 .crop-pick{ position:relative; }
 .crop-cur{
   width:100%; display:flex; align-items:center; justify-content:space-between;
@@ -2605,12 +2607,6 @@ body.station #crops, body.station #crop-tip{ display:none !important; }
 }
 .crop-opt:hover{ background:var(--accent-soft); }
 .crop-opt[aria-pressed="true"]{ color:var(--accent); }
-.crop-pop{
-  position:fixed; z-index:30; display:none; max-width:300px;
-  background:#1d2a25; color:#fff; font-size:14px; line-height:1.45;
-  padding:10px 13px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.25); pointer-events:none;
-}
-.crop-pop.on{ display:block; }
 
 /* focus slider in the side panel */
 #focus-range{ width:100%; accent-color:var(--accent); }
@@ -2697,36 +2693,13 @@ body.station #crops, body.station #crop-tip{ display:none !important; }
     document.getElementById("home-recent"), document.getElementById("go-help")
   );
 
-  /* ── crop: one drop-down instead of six buttons always on show; the "how
-     much to pour" tip appears only after the mouse rests on a crop ── */
+  /* ── crop: one drop-down instead of a dozen buttons always on show. No
+     "how much to pour" tip: the lab has its own measure for each crop. ── */
   const pick = document.createElement("div");
   pick.className = "crop-pick";
   pick.innerHTML = '<button type="button" class="crop-cur"></button><div class="crop-list"></div>';
-  const pop = document.createElement("div");
-  pop.className = "crop-pop";
-  document.body.append(pop);
   cards[0].append(pick);
   const cur = pick.querySelector(".crop-cur"), list = pick.querySelector(".crop-list");
-  let popTimer = null;
-  function tipFor(k) {
-    const c = CROPS[k];
-    return "<b>" + c.name + "</b>: nasyp " + c.scoop + (c.approx ? " (" + c.approx + ")" : "") +
-           ", zvaž a rozprostři do plochy zhruba " + c.area + "." +
-           (c.photos > 1 ? " Když leží volně aspoň polovina zrn, stačí jedna fotka; jinak appka vyzve k další." : "");
-  }
-  function hoverTip(el, k) {
-    el.addEventListener("mouseenter", () => {
-      clearTimeout(popTimer);
-      popTimer = setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        pop.innerHTML = tipFor(typeof k === "function" ? k() : k);
-        pop.style.left = (r.right + 10) + "px";
-        pop.style.top = r.top + "px";
-        pop.classList.add("on");
-      }, 600);
-    });
-    el.addEventListener("mouseleave", () => { clearTimeout(popTimer); pop.classList.remove("on"); });
-  }
   function renderPick() {
     cur.innerHTML = CROPS[crop].name + "<span>▾</span>";
     list.innerHTML = "";
@@ -2743,18 +2716,14 @@ body.station #crops, body.station #crop-tip{ display:none !important; }
         renderPick();
         closePick();
       });
-      hoverTip(b, k);
       list.append(b);
     });
   }
   function closePick() {
     pick.classList.remove("open");
-    clearTimeout(popTimer);
-    pop.classList.remove("on");
     cur.blur();   // so Enter shoots again instead of reopening the list
   }
   cur.addEventListener("click", () => pick.classList.toggle("open"));
-  hoverTip(cur, () => crop);
   document.addEventListener("click", ev => { if (!pick.contains(ev.target)) closePick(); });
   document.addEventListener("keydown", ev => { if (ev.key === "Escape") closePick(); });
   renderPick();
