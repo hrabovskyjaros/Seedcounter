@@ -889,11 +889,16 @@ const CROPS = {
   barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
-  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000 },
+  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000, areaRound: -0.4 },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true },
   maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
 };
+// what the counter needs to know about the crop (see toMarks)
+function cropOpts() {
+  const c = CROPS[crop];
+  return { round: !!c.round, areaRound: c.areaRound };
+}
 const CROP_KEY = "htz-pocitadlo-crop";
 let crop = localStorage.getItem(CROP_KEY) || "wheat";
 if (!CROPS[crop]) crop = "wheat";
@@ -1421,6 +1426,11 @@ const AREA_ROUND = 0.35;      // 1.65 grains of area still counts as one
 // the shape already splits them reliably, so area only adds a seed from 1.8:
 // at 1.65 a big bean touching a small one came out as three, on three photos.
 const AREA_ROUND_SEED = 0.2;
+// opts.areaRound overrides both for one crop. Sunflower: a lone dark seed
+// loses its black rim to the tray, so the area of one seed reads small, while
+// in a clump the rims between seeds stay in — clumps then looked like extra
+// seeds: 556 on a tray of 518 in the browser, 519 with -0.4 (-0.35 to -0.45
+// all within 3).
 
 /**
  * Do two candidate centres belong to the same grain?
@@ -1527,6 +1537,8 @@ function toMarks(seg, opts = {}) {
   const minDist2 = minDist * minDist;
   const drop = Math.max(0.6, r0 * SADDLE_FRAC);
   const apart2 = opts.round ? (r0 * ROUND_APART) ** 2 : Infinity;
+  const areaRound = typeof opts.areaRound === "number" ? opts.areaRound
+    : opts.round ? AREA_ROUND_SEED : AREA_ROUND;
 
   // pass 1 — centres by shape
   const peaksOf = new Map();
@@ -1575,7 +1587,7 @@ function toMarks(seg, opts = {}) {
   let split = 0, border = 0;
   for (const b of kept) {
     let peaks = peaksOf.get(b.id);
-    const byArea = Math.floor(b.area / unit + (opts.round ? AREA_ROUND_SEED : AREA_ROUND));
+    const byArea = Math.floor(b.area / unit + areaRound);
     if (byArea > peaks.length) peaks = spreadCentres(pix, starts[b.id], starts[b.id + 1], w, peaks, byArea);
 
     if (peaks.length > 1) split += peaks.length;
@@ -1939,7 +1951,7 @@ function countGrains(imgData, w, h) {
     return new Promise(res => setTimeout(() => {
       const seg = segment(imgData, w, h);
       if (seg.fail) { res({ fail: seg.fail }); return; }
-      const r = toMarks(seg, { round: !!CROPS[crop].round });
+      const r = toMarks(seg, cropOpts());
       res({ marks: r.marks, clustered: r.clustered, border: r.border, r0: r.r0,
             rim: seg.rim || 0, blobs: seg.blobs.length, med: seg.med,
             cover: seg.cover, mask: seg.mask.buffer });
@@ -1952,7 +1964,7 @@ function countGrains(imgData, w, h) {
     };
     wk.onerror = () => { workerDead = true; worker = null; rej(new Error("worker")); };
     const buf = imgData.data.buffer;
-    wk.postMessage({ buf, w, h, opts: { round: !!CROPS[crop].round } }, [buf]);   // handed over, not copied
+    wk.postMessage({ buf, w, h, opts: cropOpts() }, [buf]);   // handed over, not copied
   });
 }
 
