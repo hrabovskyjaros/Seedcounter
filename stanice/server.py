@@ -29,12 +29,25 @@ import numpy as np
 # OpenCV only encodes JPEGs and paints the crop here, and once already a broken
 # system update left it unloadable (a VTK library it drags in no longer
 # matched) — the station then would not start at all. Without it the same jobs
-# go to simplejpeg, which picamera2 itself depends on, or Pillow.
-try:
-    import cv2
-except Exception as e:
-    cv2 = None
-    print("OpenCV se nenačetlo, jedu bez něj:", repr(e).splitlines()[0][:200], flush=True)
+# go to simplejpeg, which picamera2 itself depends on, or Pillow. Later the
+# damaged library crashed the whole process on import (SIGSEGV), which no
+# except can catch, so it is tried in a child process first.
+def _cv2_loads():
+    try:
+        return subprocess.run([sys.executable, "-c", "import cv2"],
+                              capture_output=True, timeout=90).returncode == 0
+    except Exception:
+        return False
+
+
+cv2 = None
+if _cv2_loads():
+    try:
+        import cv2
+    except Exception as e:
+        print("OpenCV se nenačetlo, jedu bez něj:", repr(e).splitlines()[0][:200], flush=True)
+else:
+    print("OpenCV na tomto systému padá, jedu bez něj", flush=True)
 
 
 def encode_jpg(bgr, quality):
