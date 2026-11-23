@@ -1846,7 +1846,7 @@ function updateBar() {
   const dirty = b >= 0 && !!shots[b].dirty;
   bar.classList.toggle("dirty", dirty);
   document.getElementById("bar-save").textContent = dirty ? "Uložit i tak" : "Uložit měření";
-  document.getElementById("bar-cancel").textContent = dirty ? "🔄 Zopakovat měření" : "Zrušit měření";
+  document.getElementById("bar-cancel").textContent = dirty ? "Zopakovat měření" : "Zrušit měření";
   bar.setAttribute("aria-hidden", String(!up));
   document.body.classList.toggle("bar-up", up);
   // one set of Save / Cancel on screen at a time
