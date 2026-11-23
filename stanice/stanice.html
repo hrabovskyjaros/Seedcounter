@@ -182,6 +182,10 @@ button, label.btn, .crop, .kill, canvas{
   line-height:1.05;
 }
 .readout .num.pending{color:var(--muted); font-weight:400;}
+/* the sample was cleaned and has to go on the scale again */
+#in-weight.reweigh::placeholder{ color:var(--danger); opacity:1; }
+#in-weight.reweigh{ border-color:var(--danger); box-shadow:0 0 0 3px color-mix(in srgb, var(--danger) 35%, transparent); animation:reweigh 1.2s ease-in-out 3; }
+@keyframes reweigh{ 50%{ box-shadow:0 0 0 7px color-mix(in srgb, var(--danger) 15%, transparent); } }
 .readout .split{font-size:13px; color:var(--muted); font-family:ui-monospace, Menlo, Consolas, monospace;}
 .readout .split:empty{display:none;}
 .readout .unit{
@@ -1854,7 +1858,19 @@ function updateBar() {
   document.getElementById("btn-cancel").classList.toggle("hide", up);
 }
 document.getElementById("bar-save").addEventListener("click", () => document.getElementById("btn-save").click());
-document.getElementById("bar-cancel").addEventListener("click", () => document.getElementById("btn-cancel").click());
+document.getElementById("bar-cancel").addEventListener("click", () => {
+  // measuring a sample again after taking the halves out: it weighs less now
+  const again = document.getElementById("actbar").classList.contains("dirty");
+  document.getElementById("btn-cancel").click();
+  if (again) {
+    setWeight("", null);
+    recalcHtz();
+    wIn.classList.add("reweigh");
+    wIn.placeholder = "zvaž znovu";   // the usual example weight would read as the old one
+    document.getElementById("weight-hint").innerHTML = "<b>Vyčištěný vzorek zvaž znovu</b> a zadej novou hmotnost.";
+    wIn.focus();
+  }
+});
 
 /* Diagnostic view: paint the detected grain mask over the photo. A count that is
    wildly off is almost always the mask being wrong — shadows, a reflection on the
@@ -1917,7 +1933,11 @@ function setWeight(txt, from) {
   recalcHtz();
 }
 
-wIn.addEventListener("input", () => setWeight(wIn.value, wIn));
+wIn.addEventListener("input", () => {
+  wIn.classList.remove("reweigh");
+  wIn.placeholder = "19,22";
+  setWeight(wIn.value, wIn);
+});
 wFix.addEventListener("input", () => setWeight(wFix.value, wFix));
 
 /* No plausibility band on the result: with hundreds of varieties a "typical"
