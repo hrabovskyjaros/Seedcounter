@@ -884,7 +884,7 @@ const CROPS = {
   // from before still loads
   wheat:  { name: "Pšenice ozimá", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   wheat_spring: { name: "Pšenice jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
-  triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, photos: 2, freeDone: 0.68 },
+  triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 10, photos: 2, freeDone: 0.68 },
   rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0, photos: 2, freeDone: 0.68 },
   barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
@@ -2099,8 +2099,16 @@ function acceptCount(pic, w, h, seg) {
     if (res.border > Math.max(2, n * 0.08)) {
       tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
     }
-    // broken grains (crops with opts.halves) are counted as half a grain each
-    if (halves >= 3) {
+    // Broken grains (crops with opts.halves) count half a grain each. A clean
+    // triticale sample counted to the grain, a dirty one 15 whole grains high
+    // as well: halves lying against a grain are not told apart. Past
+    // maxHalves the sample wants cleaning rather than counting.
+    const maxHalves = CROPS[crop].maxHalves || Infinity;
+    const dirty = halves > maxHalves;
+    if (dirty) {
+      tips.push("Vzorek obsahuje <b>" + halves + " půlek</b> — to je moc, výsledek bude zkreslený " +
+                "(půlky přilepené k zrnům appka nerozezná). <b>Vyčisti vzorek a změř ho znovu.</b>");
+    } else if (halves >= 3) {
       tips.push("Vzorek obsahuje <b>" + halves + " půlek</b> — počítáme je jako " + fmtN(halves / 2) +
                 " celých zrn. Můžeš měření uložit, nebo <b>vzorek vyčistit</b> a změřit znovu.");
     }
@@ -2108,7 +2116,7 @@ function acceptCount(pic, w, h, seg) {
       tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
     }
     const warn = tips.length
-      ? '<div class="note' + (crowded ? " bad" : "") + '"><strong>Zkontroluj fotku</strong><ul><li>' +
+      ? '<div class="note' + (crowded || dirty ? " bad" : "") + '"><strong>Zkontroluj fotku</strong><ul><li>' +
         tips.join("</li><li>") + '</li></ul></div><div style="height:14px"></div>'
       : "";
 
