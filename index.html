@@ -889,7 +889,7 @@ const CROPS = {
   wheat:  { name: "Pšenice", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.75, halves: 1.6, maxHalves: 5 },
   triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 5, photos: 2, freeDone: 0.68 },
   rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0, photos: 2, freeDone: 0.68 },
-  barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.6, halves: 1.7, maxHalves: 5 },
   oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
   // dark like sunflower (by colour alone the tray itself became one huge
   // "clump" and splitting it ran for minutes), round like soy, and tiny
@@ -1451,7 +1451,8 @@ function segment(imgData, w, h, opts = {}) {
     // opts.halves: a long grain broken across is short and stubby. On
     // triticale every whole grain smaller than the median measured 2 and up
     // length over width, the halves and crumbs of a dirty sample under 2;
-    // wheat is stubbier — whole grains 1.74 and up, broken pieces 1.5 at most.
+    // wheat is stubbier — whole grains 1.74 and up, broken pieces 1.5 at most;
+    // whole barley grains 1.9 and up.
     // A hand count leaves them out, but they are in the weighed sample, so
     // they count half a grain each: two halves make one (see toMarks).
     b.half = !!(opts.halves && b.area < med && b.elong < opts.halves);
