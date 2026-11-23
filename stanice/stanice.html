@@ -733,6 +733,7 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
       <span><i style="background:#22D3EE"></i>volné zrno</span>
       <span><i style="background:#F59E0B"></i>rozdělený slepenec</span>
       <span><i style="background:#F0338D"></i>ruční oprava</span>
+      <span><i style="background:#A78BFA"></i>půlka (½ zrna)</span>
     </div>
 
     <div style="height:10px"></div>
@@ -930,6 +931,8 @@ function parseNum(raw) {
   return isFinite(v) ? v : NaN;
 }
 const fmt1 = v => v.toFixed(1).replace(".", ",");
+// a count may end in a half: two broken grains count as one
+const fmtN = v => Number.isInteger(v) ? String(v) : v.toFixed(1).replace(".", ",");
 const fmt2 = v => v.toFixed(2).replace(".", ",");
 
 /* ══════════════════════════════════════════════════════════════
@@ -1432,7 +1435,9 @@ function segment(imgData, w, h, opts = {}) {
     // opts.halves: a long grain broken across is short and stubby. On
     // triticale every whole grain smaller than the median measured 2 and up
     // length over width, the halves and crumbs of a dirty sample under 2.
-    if (opts.halves && b.area < med && b.elong < opts.halves) return false;
+    // A hand count leaves them out, but they are in the weighed sample, so
+    // they count half a grain each: two halves make one (see toMarks).
+    b.half = !!(opts.halves && b.area < med && b.elong < opts.halves);
     if (light && light(b)) return false;
     if (offTray[b.id]) { rim++; return false; }
     if (b.border && b.area > med * 8) { rim++; return false; }
@@ -1557,7 +1562,7 @@ function toMarks(seg, opts = {}) {
   }
 
   // a typical grain's half-thickness, taken from blobs that are plainly single
-  const singles = kept.filter(b => b.area > med * 0.7 && b.area < med * 1.3);
+  const singles = kept.filter(b => !b.half && b.area > med * 0.7 && b.area < med * 1.3);
   const radii = (singles.length >= 5 ? singles : kept).map(b => {
     let mx = 0;
     for (let k = starts[b.id]; k < starts[b.id + 1]; k++) {
@@ -1614,13 +1619,17 @@ function toMarks(seg, opts = {}) {
   // The band is tight on purpose: broken kernels and tip caps are lone blobs
   // too, and letting them in shrank the unit enough to count a maize sample of
   // 175 as 184.
-  const lone = kept.filter(b => peaksOf.get(b.id).length === 1 && b.area > med * 0.75 && b.area < med * 1.4);
+  const lone = kept.filter(b => !b.half && peaksOf.get(b.id).length === 1 && b.area > med * 0.75 && b.area < med * 1.4);
   const unit = lone.length >= 5 ? median(lone.map(b => b.area)) : med;
 
   // pass 2 — top up from area where the shape gave too few centres
   const marks = [];
   let split = 0, border = 0;
   for (const b of kept) {
+    if (b.half) {
+      marks.push({ x: b.cx, y: b.cy, n: 0.5, kind: "half" });
+      continue;
+    }
     let peaks = peaksOf.get(b.id);
     const byArea = Math.floor(b.area / unit + areaRound);
     if (byArea > peaks.length) peaks = spreadCentres(pix, starts[b.id], starts[b.id + 1], w, peaks, byArea);
@@ -1751,7 +1760,7 @@ function renderShots() {
       const who = document.createElement("div");
       who.className = "who";
       const t = document.createElement("b");
-      t.textContent = "Fotka " + (i + 1) + " · " + shotCount(s) + " zrn";
+      t.textContent = "Fotka " + (i + 1) + " · " + fmtN(shotCount(s)) + " zrn";
       const sub = document.createElement("span");
       sub.textContent = "volně " + Math.round(s.free * 100) + " % zrn" + (i === cur ? " · zobrazená" : "");
       who.append(t, sub);
@@ -1850,7 +1859,7 @@ function draw() {
   if (showMask && maskCanvas) ctx.drawImage(maskCanvas, 0, 0);
   const r = Math.max(3.5, grainR * 0.34);
   const lw = Math.max(1.6, grainR * 0.1);
-  const COLOR = { one: "#22D3EE", split: "#F59E0B", manual: "#F0338D" };
+  const COLOR = { one: "#22D3EE", split: "#F59E0B", manual: "#F0338D", half: "#A78BFA" };
   for (const m of marks) {
     ctx.beginPath();
     ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
@@ -1860,8 +1869,8 @@ function draw() {
     ctx.strokeStyle = "rgba(0,0,0,.7)";
     ctx.stroke();
   }
-  document.getElementById("out-count").textContent = shots.length ? usedCount() : total();
-  document.getElementById("full-count").textContent = total();
+  document.getElementById("out-count").textContent = fmtN(shots.length ? usedCount() : total());
+  document.getElementById("full-count").textContent = fmtN(total());
   recalcHtz();
   if (shots.length) renderShots();
 }
@@ -2065,9 +2074,11 @@ function acceptCount(pic, w, h, seg) {
     }
 
     const res = seg;
-    const free = res.marks.filter(m => m.kind === "one").length / Math.max(1, res.marks.length);
+    // halves lie free as a rule; the share is of the whole grains
+    const halves = res.marks.filter(m => m.kind === "half").length;
+    const free = res.marks.filter(m => m.kind === "one").length / Math.max(1, res.marks.length - halves);
     const diag =
-      "útvarů " + res.blobs + " · značek " + res.marks.length +
+      "útvarů " + res.blobs + " · značek " + res.marks.length + (halves ? " · půlek " + halves : "") +
       " · typické zrno " + res.med.toFixed(0) + " px² (r " + res.r0.toFixed(1) + " px)" +
       " · pokrytí " + (res.cover * 100).toFixed(1) + " % · volných " + Math.round(free * 100) +
       " % · fotka " + w + "×" + h;
@@ -2087,6 +2098,11 @@ function acceptCount(pic, w, h, seg) {
     // are handled already — the free share above, the tray test in segment().
     if (res.border > Math.max(2, n * 0.08)) {
       tips.push("Část zrn leží na okraji fotky. Zaber vzorek celý i s kouskem misky kolem dokola.");
+    }
+    // broken grains (crops with opts.halves) are counted as half a grain each
+    if (halves >= 3) {
+      tips.push("Vzorek obsahuje <b>" + halves + " půlek</b> — počítáme je jako " + fmtN(halves / 2) +
+                " celých zrn. Můžeš měření uložit, nebo <b>vzorek vyčistit</b> a změřit znovu.");
     }
     if (n < 40) {
       tips.push("Spočítáno jen " + n + " zrn. Malý vzorek dělá HTZ nespolehlivou — vhodných je aspoň 150 zrn.");
@@ -2433,7 +2449,7 @@ function renderList() {
     const b = document.createElement("b");
     b.textContent = sampleLabel(m);
     const s = document.createElement("span");
-    s.textContent = (m.crop ? m.crop + " · " : "") + m.count + " zrn · " + fmt2(m.weight) + " g · " + m.when;
+    s.textContent = (m.crop ? m.crop + " · " : "") + fmtN(m.count) + " zrn · " + fmt2(m.weight) + " g · " + m.when;
     who.append(b, s);
     const val = document.createElement("div");
     val.className = "val";
@@ -2471,7 +2487,7 @@ function renderRecent() {
     const b = document.createElement("b");
     b.textContent = sampleLabel(m);
     const s = document.createElement("span");
-    s.textContent = m.count + " zrn · " + fmt2(m.weight) + " g";
+    s.textContent = fmtN(m.count) + " zrn · " + fmt2(m.weight) + " g";
     who.append(b, s);
     const val = document.createElement("div");
     val.className = "val";
@@ -2493,7 +2509,7 @@ function renderRecent() {
 
 document.getElementById("btn-copy").addEventListener("click", async () => {
   const txt = ["Pokus\tVzorek\tPlodina\tZrn\tFotky (zrn)\tHmotnost (g)\tHTZ (g)\tČas"]
-    .concat(saved.map(m => [m.trial || "", m.name, m.crop || "", m.count, (m.shots || [m.count]).join(" / "),
+    .concat(saved.map(m => [m.trial || "", m.name, m.crop || "", fmtN(m.count), (m.shots || [m.count]).map(fmtN).join(" / "),
                             fmt2(m.weight), fmt1(m.htz), m.when].join("\t")))
     .join("\n");
   const dump = document.getElementById("dump");
@@ -2625,6 +2641,10 @@ body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); colo
 #side-act > div[style], #next-box > div[style]{ display:none; }
 #side-act #next-box:not(.hide){ display:flex; flex-direction:column; gap:10px; }
 #side-act .note{ margin:0; box-shadow:var(--shadow); background:var(--panel); }
+#side-act #warnings > div[style]{ display:none; }
+#side-act #warnings .note ul{ margin:6px 0 0; padding-left:18px; }
+/* a finished sample: the Save / Cancel bar takes the bottom, notes stand above it */
+body.bar-up #side-act{ bottom:190px; }
 #side-act #lbl-next{ min-height:72px; }
 #side-act #btn-save, #side-act #btn-cancel{ background:var(--panel); border:1px solid var(--line-strong); }
 #side-act #btn-cancel{ color:var(--danger); }
@@ -3057,7 +3077,8 @@ body.station #crops{ display:none !important; }
   const act = document.createElement("div");
   act.id = "side-act";
   const saveBtn = document.getElementById("btn-save");
-  act.append(document.getElementById("next-box"), saveBtn, document.getElementById("btn-cancel"));
+  act.append(document.getElementById("warnings"), document.getElementById("next-box"), saveBtn,
+             document.getElementById("btn-cancel"));
   document.getElementById("s-result").append(act);
 
   show("s-home");

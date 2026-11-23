@@ -452,9 +452,11 @@ class Station:
             if new:
                 wr.writerow(CSV_FIELDS)
             dec = lambda v, n: f"{float(v):.{n}f}".replace(".", ",")
+            # a count can end in a half: two broken grains count as one grain
+            cnt = lambda v: str(int(v)) if float(v).is_integer() else dec(v, 1)
             wr.writerow([
-                rec.get("trial", ""), rec.get("name", ""), rec.get("crop", ""), rec.get("count", ""),
-                " / ".join(str(s) for s in rec.get("shots", [])),
+                rec.get("trial", ""), rec.get("name", ""), rec.get("crop", ""), cnt(rec.get("count", 0)),
+                " / ".join(cnt(s) for s in rec.get("shots", [])),
                 dec(rec.get("weight", 0), 2), dec(rec.get("htz", 0), 1),
                 rec.get("when") or datetime.now().strftime("%d. %m. %Y %H:%M"),
             ])
