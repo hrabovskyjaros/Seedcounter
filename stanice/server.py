@@ -133,9 +133,11 @@ class Camera:
         # middle of the chip (the IMX519's 1280x720 is), so the preview is held
         # to the smallest mode that reads the whole sensor.
         sensor = {}
+        self.full_modes = []
         try:
             full = [m for m in self.cam.sensor_modes
                     if tuple(m["crop_limits"][2:]) == (sw, sh)]
+            self.full_modes = sorted(full, key=lambda m: m["size"][0])
             if full:
                 m = min(full, key=lambda m: m["size"][0])
                 sensor = {"sensor": {"output_size": m["size"], "bit_depth": m["bit_depth"]}}
@@ -208,8 +210,24 @@ class Camera:
         s = min(1.0, side / max(sw, sh))
         size = (int(sw * s) // 2 * 2, int(sh * s) // 2 * 2)
         if size not in self.stills:
-            self.stills[size] = self.cam.create_still_configuration(main={"format": "RGB888", "size": size},
-                                                                         transform=self.transform)
+            # The photo too must come from a mode that reads the whole sensor.
+            # Left to choose, libcamera took the IMX519's 3840x2160 — cut from
+            # the middle — for the bigger photos of wheat and rye, so the crop
+            # drawn on the live view fell on another part of the tray and a rye
+            # sample of 567 grains counted 356.
+            sensor = {}
+            if self.full_modes:
+                m = next((m for m in self.full_modes if m["size"][0] >= size[0]), self.full_modes[-1])
+                sensor = {"sensor": {"output_size": m["size"], "bit_depth": m["bit_depth"]}}
+            try:
+                self.stills[size] = self.cam.create_still_configuration(
+                    main={"format": "RGB888", "size": size}, transform=self.transform, **sensor)
+            except TypeError:   # older Picamera2 without the sensor argument
+                self.stills[size] = self.cam.create_still_configuration(
+                    main={"format": "RGB888", "size": size}, transform=self.transform)
+            print(f"kamera: fotka {size[0]}x{size[1]}"
+                  + (f" z režimu {sensor['sensor']['output_size'][0]}x{sensor['sensor']['output_size'][1]}" if sensor else ""),
+                  flush=True)
         cfg = self.stills[size]
         if self.vcm:
             # the motor holds its place; set it again in case the mode switch reset it
