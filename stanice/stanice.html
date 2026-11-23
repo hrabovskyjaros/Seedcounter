@@ -890,7 +890,9 @@ const CROPS = {
   triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 5, photos: 2, freeDone: 0.68 },
   rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0, photos: 2, freeDone: 0.68 },
   barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.6, halves: 1.7, maxHalves: 5 },
-  oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
+  // hulled oat grains are long: up to 7 times as long as wide, so the cut for
+  // slivers would take most of them (399 counted 161)
+  oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 8 },
   // dark like sunflower (by colour alone the tray itself became one huge
   // "clump" and splitting it ran for minutes), round like soy, and tiny
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600, dark: true, round: true, areaRound: -0.1, dust: 0.6, photos: 2, freeDone: 0.83 },
