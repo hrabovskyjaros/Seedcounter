@@ -892,7 +892,7 @@ const CROPS = {
   barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.6, halves: 1.7, maxHalves: 5 },
   // hulled oat grains are long: up to 7 times as long as wide, so the cut for
   // slivers would take most of them (399 counted 161)
-  oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 8, photos: 2, freeDone: 0.65 },
+  oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 8, minArea: 0.45, areaRound: 0.2, photos: 2, freeDone: 0.65 },
   // dark like sunflower (by colour alone the tray itself became one huge
   // "clump" and splitting it ran for minutes), round like soy, and tiny
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600, dark: true, round: true, areaRound: -0.1, dust: 0.6, photos: 2, freeDone: 0.83 },
@@ -906,7 +906,7 @@ const CROPS = {
 // what the counter needs to know about the crop (see toMarks)
 function cropOpts() {
   const c = CROPS[crop];
-  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound, sliver: c.sliver, halves: c.halves, dust: c.dust };
+  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound, sliver: c.sliver, halves: c.halves, dust: c.dust, minArea: c.minArea };
 }
 const CROP_KEY = "htz-pocitadlo-crop";
 let crop = localStorage.getItem(CROP_KEY) || "wheat";
@@ -1442,7 +1442,9 @@ function segment(imgData, w, h, opts = {}) {
     // A third of a grain is chaff or a fleck on the tray rim, not a grain: on
     // ten checked photos every such blob was one, while the smallest real
     // kernels and halves measured 0.38 of a grain and up.
-    if (b.area < Math.max(floor, med * 0.35)) return false;
+    // opts.minArea raises it for a crop with a lot of chaff: in a dirty oat
+    // sample bits of husk under half a grain counted as grains.
+    if (b.area < Math.max(floor, med * (opts.minArea || 0.35))) return false;
     // A sliver of pod or glume: no bigger than a grain, yet many times longer
     // than wide. Soy beans measure up to 1.5 and wheat kernels about 2.5; a
     // soy pod sliver that came out as a grain measured 6. Two grains touching
