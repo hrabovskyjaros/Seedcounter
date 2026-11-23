@@ -1841,6 +1841,12 @@ function updateBar() {
              shots.length > 0 && shots.length >= needed() &&
              !document.getElementById("btn-save").disabled;
   bar.classList.toggle("up", up);
+  // a sample with too many halves leads to measuring again, saving stays possible
+  const b = bestShot();
+  const dirty = b >= 0 && !!shots[b].dirty;
+  bar.classList.toggle("dirty", dirty);
+  document.getElementById("bar-save").textContent = dirty ? "Uložit i tak" : "Uložit měření";
+  document.getElementById("bar-cancel").textContent = dirty ? "🔄 Zopakovat měření" : "Zrušit měření";
   bar.setAttribute("aria-hidden", String(!up));
   document.body.classList.toggle("bar-up", up);
   // one set of Save / Cancel on screen at a time
@@ -2136,7 +2142,7 @@ function acceptCount(pic, w, h, seg) {
       : "";
 
     shots.push({
-      photo: pic, marks: res.marks, undo: [], free, diag, warn,
+      photo: pic, marks: res.marks, undo: [], free, diag, warn, dirty,
       grainR: Math.max(4, res.r0),
       mask: res.maskCanvas || (res.mask ? buildMaskCanvas(res.mask, w, h) : null)
     });

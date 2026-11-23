@@ -1841,6 +1841,12 @@ function updateBar() {
              shots.length > 0 && shots.length >= needed() &&
              !document.getElementById("btn-save").disabled;
   bar.classList.toggle("up", up);
+  // a sample with too many halves leads to measuring again, saving stays possible
+  const b = bestShot();
+  const dirty = b >= 0 && !!shots[b].dirty;
+  bar.classList.toggle("dirty", dirty);
+  document.getElementById("bar-save").textContent = dirty ? "Uložit i tak" : "Uložit měření";
+  document.getElementById("bar-cancel").textContent = dirty ? "🔄 Zopakovat měření" : "Zrušit měření";
   bar.setAttribute("aria-hidden", String(!up));
   document.body.classList.toggle("bar-up", up);
   // one set of Save / Cancel on screen at a time
@@ -2136,7 +2142,7 @@ function acceptCount(pic, w, h, seg) {
       : "";
 
     shots.push({
-      photo: pic, marks: res.marks, undo: [], free, diag, warn,
+      photo: pic, marks: res.marks, undo: [], free, diag, warn, dirty,
       grainR: Math.max(4, res.r0),
       mask: res.maskCanvas || (res.mask ? buildMaskCanvas(res.mask, w, h) : null)
     });
@@ -2655,6 +2661,9 @@ body.station .actbar .in{ flex-direction:column-reverse; }
 body.station .actbar .btn{ text-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
 body.station .actbar .btn.glass-save{ flex:none; min-height:72px; background:var(--accent); color:var(--accent-ink); border-color:transparent; }
 body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); color:var(--danger); border:1px solid var(--line-strong); }
+/* too many halves: measuring again comes first, saving anyway second */
+body.station .actbar.dirty .btn.glass-cancel{ order:1; min-height:72px; background:var(--accent); color:var(--accent-ink); border-color:transparent; }
+body.station .actbar.dirty .btn.glass-save{ min-height:0; background:var(--panel); color:var(--ink); border:1px solid var(--line-strong); }
 /* while the sample still wants another photo, its buttons stand where Save and
    Cancel stand once it is done — not below the photo, out of sight */
 #side-act{
