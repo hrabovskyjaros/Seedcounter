@@ -879,7 +879,7 @@ function persist() {
    2 mm seeds, and which HTZ result is physically believable.
    ═══════════════════════════════════════════════════════════ */
 const CROPS = {
-  wheat:  { name: "Pšenice", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  wheat:  { name: "Pšenice", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.75 },
   triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 10, photos: 2, freeDone: 0.68 },
   rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0, photos: 2, freeDone: 0.68 },
   barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
@@ -1691,7 +1691,8 @@ const FREE_MIN = 0.2;      // below this share of free grains a photo counts hig
 const SPREAD_MAX = 0.04;   // two photos of one sample further apart than this disagree
 // A photo this well spread is trusted on its own: every checked photo above
 // 40 % free was within one grain of the hand count. A crop can ask for more
-// (freeDone): sunflower counted right from 55 % free, rye from 68 %.
+// (freeDone): sunflower counted right from 55 % free, rye and triticale from
+// 68 %, wheat from 75 %.
 const FREE_DONE = 0.5;
 
 function shotCount(s) { return s.marks.reduce((a, m) => a + m.n, 0); }
