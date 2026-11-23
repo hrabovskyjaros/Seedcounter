@@ -485,6 +485,8 @@ input[type=file]:focus-visible + span{text-decoration:underline;}
 }
 
 .legend{display:flex; gap:16px; flex-wrap:wrap; font-size:13px; color:var(--muted); align-items:center;}
+.legend span[data-k]{ cursor:default; padding:2px 6px; border-radius:6px; }
+.legend span[data-k]:hover{ color:var(--ink); background:var(--accent-soft); }
 .legend i{width:11px; height:11px; border-radius:50%; display:inline-block; margin-right:6px; vertical-align:-1px;}
 
 textarea.dump{
@@ -740,10 +742,10 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
 
     <div style="height:8px"></div>
     <div class="legend">
-      <span><i style="background:#22D3EE"></i>volné zrno</span>
-      <span><i style="background:#F59E0B"></i>rozdělený slepenec</span>
-      <span><i style="background:#F0338D"></i>ruční oprava</span>
-      <span><i style="background:#A78BFA"></i>půlka (½ zrna)</span>
+      <span data-k="one"><i style="background:#22D3EE"></i>volné zrno</span>
+      <span data-k="split"><i style="background:#F59E0B"></i>rozdělený slepenec</span>
+      <span data-k="manual"><i style="background:#F0338D"></i>ruční oprava</span>
+      <span data-k="half"><i style="background:#A78BFA"></i>půlka (½ zrna)</span>
     </div>
 
     <div style="height:10px"></div>
@@ -1926,13 +1928,31 @@ function buildMaskCanvas(buf, w, h) {
   return c;
 }
 
+let hiKind = null;   // the mark kind pointed at in the legend
+document.querySelectorAll(".legend span[data-k]").forEach(el => {
+  el.addEventListener("mouseenter", () => { hiKind = el.dataset.k; if (photo) draw(); });
+  el.addEventListener("mouseleave", () => { hiKind = null; if (photo) draw(); });
+});
+
 function draw() {
   ctx.drawImage(photo, 0, 0);
   if (showMask && maskCanvas) ctx.drawImage(maskCanvas, 0, 0);
   const r = Math.max(3.5, grainR * 0.34);
   const lw = Math.max(1.6, grainR * 0.1);
   const COLOR = { one: "#22D3EE", split: "#F59E0B", manual: "#F0338D", half: "#A78BFA" };
-  for (const m of marks) {
+  // a kind pointed at in the legend stands out: bigger, ringed white, drawn
+  // last; the other marks fade
+  const dot = (m, big) => {
+    if (big) {   // a ring round the whole grain, plain to see on the shrunk photo
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, Math.max(r * 2.5, grainR * 1.5), 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(3, grainR * 0.35);
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
+      ctx.lineWidth = Math.max(1.5, grainR * 0.18);
+      ctx.strokeStyle = COLOR[m.kind] || COLOR.one;
+      ctx.stroke();
+    }
     ctx.beginPath();
     ctx.arc(m.x, m.y, r, 0, Math.PI * 2);
     ctx.fillStyle = COLOR[m.kind] || COLOR.one;
@@ -1940,7 +1960,11 @@ function draw() {
     ctx.lineWidth = lw;
     ctx.strokeStyle = "rgba(0,0,0,.7)";
     ctx.stroke();
-  }
+  };
+  ctx.globalAlpha = hiKind ? 0.25 : 1;
+  for (const m of marks) if (m.kind !== hiKind) dot(m, false);
+  ctx.globalAlpha = 1;
+  if (hiKind) for (const m of marks) if (m.kind === hiKind) dot(m, true);
   document.getElementById("out-count").textContent = fmtN(shots.length ? usedCount() : total());
   document.getElementById("out-split").textContent = shots.length ? countSplit() : "";
   document.getElementById("full-count").textContent = fmtN(total());
