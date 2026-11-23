@@ -1250,6 +1250,7 @@ function outsideTray(mask, label, nBlobs, w, h) {
 // Two trays of 518 seeds read 552 and 529 by colour alone, 519 and 521 with it.
 const DARK_MARGIN = 25;   // this much darker than the tray floor before it counts
 const DARK_GAIN = 1.2;    // darkness against the blue-distance scale below
+const DARK_HUSK = 140;    // a blob brighter than this on average is husk, not seed
 function blueField(px, w, h, dark) {
   const n = w * h, ratio = new Float32Array(n);
   const hist = new Uint32Array(512);
@@ -1404,6 +1405,19 @@ function segment(imgData, w, h, opts = {}) {
   // to the edge of the frame. Counted as a cluster it would invent hundreds of
   // grains, so anything border-bound and vastly oversized is thrown away.
   let rim = 0;
+  // Dark seeds (sunflower): a piece of white husk is no seed. Seeds averaged
+  // 126 of 255 at the brightest on three trays, husk flakes 150 to 205.
+  let light = null;
+  if (opts.dark) {
+    const sum = new Float64Array(blobs.length), cnt = new Uint32Array(blobs.length);
+    for (let i = 0; i < cc.label.length; i++) {
+      const L = cc.label[i];
+      if (L < 0) continue;
+      sum[L] += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
+      cnt[L]++;
+    }
+    light = b => sum[b.id] / (3 * cnt[b.id]) > DARK_HUSK;
+  }
   const kept = big.filter(b => {
     // A third of a grain is chaff or a fleck on the tray rim, not a grain: on
     // ten checked photos every such blob was one, while the smallest real
@@ -1414,6 +1428,7 @@ function segment(imgData, w, h, opts = {}) {
     // soy pod sliver that came out as a grain measured 6. Two grains touching
     // end to end are long too, but have the area of two, so they stay.
     if (b.elong > 3.5 && b.area < med * 1.5) return false;
+    if (light && light(b)) return false;
     if (offTray[b.id]) { rim++; return false; }
     if (b.border && b.area > med * 8) { rim++; return false; }
     return true;
