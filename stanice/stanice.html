@@ -910,10 +910,16 @@ const CROP_KEY = "htz-pocitadlo-crop";
 let crop = localStorage.getItem(CROP_KEY) || "wheat";
 if (!CROPS[crop]) crop = "wheat";
 
+// the crops as listed: by name, Czech order, "Jiná" last
+function cropKeys() {
+  return Object.keys(CROPS).sort((a, b) =>
+    (a === "other") - (b === "other") || CROPS[a].name.localeCompare(CROPS[b].name, "cs"));
+}
+
 function renderCrops() {
   const box = document.getElementById("crops");
   box.innerHTML = "";
-  Object.keys(CROPS).forEach(k => {
+  cropKeys().forEach(k => {
     const b = document.createElement("button");
     b.className = "crop";
     b.type = "button";
@@ -2848,7 +2854,7 @@ body.station #crops{ display:none !important; }
   function renderPick() {
     cur.innerHTML = CROPS[crop].name + "<span>▾</span>";
     list.innerHTML = "";
-    Object.keys(CROPS).forEach(k => {
+    cropKeys().forEach(k => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "crop-opt";
