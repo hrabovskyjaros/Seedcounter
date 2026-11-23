@@ -879,14 +879,11 @@ function persist() {
    2 mm seeds, and which HTZ result is physically believable.
    ═══════════════════════════════════════════════════════════ */
 const CROPS = {
-  // winter and spring forms count alike but are kept apart so the records
-  // filter by crop; the old keys stay the winter form so a crop remembered
-  // from before still loads
   wheat:  { name: "Pšenice", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 10, photos: 2, freeDone: 0.68 },
   rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0, photos: 2, freeDone: 0.68 },
-  barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
-  barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
+  oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
   sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000, dark: true, areaRound: 0.3, photos: 2, freeDone: 0.55 },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true },
