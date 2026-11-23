@@ -885,7 +885,7 @@ const CROPS = {
   wheat_spring: { name: "Pšenice jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   triticale: { name: "Tritikale ozimé", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400 },
   triticale_spring: { name: "Tritikale jarní", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400 },
-  rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
+  rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0.2 },
   barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
@@ -897,7 +897,7 @@ const CROPS = {
 // what the counter needs to know about the crop (see toMarks)
 function cropOpts() {
   const c = CROPS[crop];
-  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound };
+  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound, sliver: c.sliver };
 }
 const CROP_KEY = "htz-pocitadlo-crop";
 let crop = localStorage.getItem(CROP_KEY) || "wheat";
@@ -1427,7 +1427,9 @@ function segment(imgData, w, h, opts = {}) {
     // than wide. Soy beans measure up to 1.5 and wheat kernels about 2.5; a
     // soy pod sliver that came out as a grain measured 6. Two grains touching
     // end to end are long too, but have the area of two, so they stay.
-    if (b.elong > 3.5 && b.area < med * 1.5) return false;
+    // A crop can move the cut (opts.sliver): rye kernels measure up to 4,
+    // and with the cut at 3.5 a tray of 567 lost 20 lone grains to it.
+    if (b.elong > (opts.sliver || 3.5) && b.area < med * 1.5) return false;
     if (light && light(b)) return false;
     if (offTray[b.id]) { rim++; return false; }
     if (b.border && b.area > med * 8) { rim++; return false; }
