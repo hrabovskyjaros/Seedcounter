@@ -295,6 +295,9 @@ input[type=file]:focus-visible + span{text-decoration:underline;}
   -webkit-overflow-scrolling:touch;
   position:relative;
 }
+.shot.zoomed{ overflow:hidden; }
+.shot.zoomed canvas{ cursor:grab; }
+.shot.zoomed canvas:active{ cursor:grabbing; }
 .shot canvas{
   display:block;
   margin:0 auto;
@@ -661,15 +664,15 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div class="card">
       <div class="field">
         <label class="label" for="in-trial">Pokus (zůstává pro celou sérii)</label>
-        <input type="text" id="in-trial" placeholder="FC Baník Ostrava" autocomplete="off">
+        <input type="text" id="in-trial" autocomplete="off">
       </div>
       <div class="field">
         <label class="label" for="in-name">1 · Kód vzorku</label>
-        <input type="text" id="in-name" placeholder="FCB" autocomplete="off">
+        <input type="text" id="in-name" autocomplete="off">
       </div>
       <div class="field">
         <label class="label" for="in-weight">2 · Hmotnost navážky (g)</label>
-        <input type="text" id="in-weight" class="num-in" inputmode="decimal" placeholder="19,22" autocomplete="off">
+        <input type="text" id="in-weight" class="num-in" inputmode="decimal" autocomplete="off">
       </div>
       <p class="hint" id="weight-hint">Zvaž, co jsi nasypal, a opiš to z váhy. Teprve pak foť.</p>
     </div>
@@ -765,7 +768,7 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
     <div class="card">
       <div class="field">
         <label class="label" for="in-weight-fix">Hmotnost navážky (g)</label>
-        <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" placeholder="19,22" autocomplete="off">
+        <input type="text" id="in-weight-fix" class="num-in" inputmode="decimal" autocomplete="off">
       </div>
     </div>
 
@@ -900,13 +903,13 @@ const CROPS = {
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true, photos: 2, freeDone: 0.55 },
   // round seeds like soy, so soy's rules until a counted tray says otherwise
   pea:    { name: "Hrách",    scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 100, hi: 450, side: 2000, round: true, photos: 2, freeDone: 0.5, darkDebris: 0.75 },
-  maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
+  maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2, pale: 0.22, maxHalves: 5 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
 };
 // what the counter needs to know about the crop (see toMarks)
 function cropOpts() {
   const c = CROPS[crop];
-  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound, sliver: c.sliver, halves: c.halves, dust: c.dust, minArea: c.minArea, darkDebris: c.darkDebris };
+  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound, sliver: c.sliver, halves: c.halves, dust: c.dust, minArea: c.minArea, darkDebris: c.darkDebris, pale: c.pale };
 }
 const CROP_KEY = "htz-pocitadlo-crop";
 let crop = localStorage.getItem(CROP_KEY) || "wheat";
@@ -1430,15 +1433,22 @@ function segment(imgData, w, h, opts = {}) {
   // opts.darkDebris (light seeds, pea): a blob far darker than the typical
   // one is a leaf, a bit of pod or a stone — a dirty pea tray had a green leaf
   // at 60 % of the brightness of the peas, the darkest pea at 82 %.
-  let light = null, darkBit = null;
-  if (opts.dark || opts.darkDebris) {
+  // opts.pale (maize): a broken kernel shows its white inside. Small blobs
+  // this washed out were broken pieces — 11 on a dirty tray, at most 2 on
+  // eighteen clean ones, where whole kernels kept (R-B)/R above 0.22.
+  let light = null, darkBit = null, paleBit = null;
+  if (opts.dark || opts.darkDebris || opts.pale) {
     const sum = new Float64Array(blobs.length), cnt = new Uint32Array(blobs.length);
+    const sR = new Float64Array(blobs.length), sB = new Float64Array(blobs.length);
     for (let i = 0; i < cc.label.length; i++) {
       const L = cc.label[i];
       if (L < 0) continue;
       sum[L] += px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2];
+      sR[L] += px[i * 4];
+      sB[L] += px[i * 4 + 2];
       cnt[L]++;
     }
+    if (opts.pale) paleBit = b => b.area < med * 0.8 && (sR[b.id] - sB[b.id]) / Math.max(1, sR[b.id]) < opts.pale;
     const lum = b => sum[b.id] / (3 * cnt[b.id]);
     if (opts.dark) light = b => lum(b) > DARK_HUSK;
     if (opts.darkDebris) {
@@ -1467,7 +1477,7 @@ function segment(imgData, w, h, opts = {}) {
     // whole barley grains 1.9 and up.
     // A hand count leaves them out, but they are in the weighed sample, so
     // they count half a grain each: two halves make one (see toMarks).
-    b.half = !!(opts.halves && b.area < med && b.elong < opts.halves);
+    b.half = !!(opts.halves && b.area < med && b.elong < opts.halves) || !!(paleBit && paleBit(b));
     if (light && light(b)) return false;
     if (darkBit && darkBit(b)) return false;
     if (offTray[b.id]) { rim++; return false; }
@@ -1775,6 +1785,7 @@ function countSplit() {
 
 function showShot(i) {
   cur = i;
+  resetZoom();
   const s = shots[i];
   photo = s.photo;
   marks = s.marks;
@@ -1891,7 +1902,7 @@ document.getElementById("bar-cancel").addEventListener("click", () => {
     setWeight("", null);
     recalcHtz();
     wIn.classList.add("reweigh");
-    wIn.placeholder = "zvaž znovu";   // the usual example weight would read as the old one
+    wIn.placeholder = "zvaž znovu";
     document.getElementById("weight-hint").innerHTML = "<b>Vyčištěný vzorek zvaž znovu</b> a zadej novou hmotnost.";
     wIn.focus();
   }
@@ -1960,7 +1971,7 @@ function setWeight(txt, from) {
 
 wIn.addEventListener("input", () => {
   wIn.classList.remove("reweigh");
-  wIn.placeholder = "19,22";
+  wIn.placeholder = "";
   setWeight(wIn.value, wIn);
 });
 wFix.addEventListener("input", () => setWeight(wFix.value, wFix));
@@ -1986,8 +1997,50 @@ function recalcHtz() {
   return htz;
 }
 
+/* --- zoom: Ctrl + wheel over the photo zooms in on the spot under the
+   pointer, dragging then moves the zoomed photo. A drag is no tap, so it
+   adds no mark. Every new photo starts unzoomed. ------------------------ */
+let zoom = 1, panX = 0, panY = 0, drag = null, dragged = false;
+function applyZoom() {
+  // keep the photo covering its frame: no panning off past its edges
+  const w = cv.offsetWidth, h = cv.offsetHeight;
+  panX = Math.min(0, Math.max(w * (1 - zoom), panX));
+  panY = Math.min(0, Math.max(h * (1 - zoom), panY));
+  cv.style.transformOrigin = "0 0";
+  cv.style.transform = zoom > 1 ? "translate(" + panX + "px," + panY + "px) scale(" + zoom + ")" : "";
+  document.getElementById("shot").classList.toggle("zoomed", zoom > 1);
+}
+function resetZoom() { zoom = 1; panX = panY = 0; applyZoom(); }
+cv.addEventListener("wheel", ev => {
+  if (!ev.ctrlKey) return;
+  ev.preventDefault();               // not the browser's page zoom
+  const r = cv.getBoundingClientRect();
+  const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+  const nz = Math.min(8, Math.max(1, zoom * (ev.deltaY < 0 ? 1.25 : 0.8)));
+  panX += mx * (1 - nz / zoom);
+  panY += my * (1 - nz / zoom);
+  zoom = nz;
+  applyZoom();
+}, { passive: false });
+cv.addEventListener("mousedown", ev => {
+  dragged = false;
+  if (zoom <= 1 || ev.button !== 0) return;
+  drag = { x: ev.clientX, y: ev.clientY, px: panX, py: panY };
+  ev.preventDefault();
+});
+window.addEventListener("mousemove", ev => {
+  if (!drag) return;
+  const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 4) dragged = true;
+  panX = drag.px + dx;
+  panY = drag.py + dy;
+  applyZoom();
+});
+window.addEventListener("mouseup", () => { drag = null; });
+
 /* --- tap to correct --------------------------------------------------- */
 cv.addEventListener("click", ev => {
+  if (dragged) { dragged = false; return; }   // the end of a drag, not a tap
   const rect = cv.getBoundingClientRect();
   const sx = cv.width / rect.width, sy = cv.height / rect.height;
   const x = (ev.clientX - rect.left) * sx, y = (ev.clientY - rect.top) * sy;
