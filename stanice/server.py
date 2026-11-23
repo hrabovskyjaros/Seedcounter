@@ -24,8 +24,62 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import cv2
 import numpy as np
+
+# OpenCV only encodes JPEGs and paints the crop here, and once already a broken
+# system update left it unloadable (a VTK library it drags in no longer
+# matched) — the station then would not start at all. Without it the same jobs
+# go to simplejpeg, which picamera2 itself depends on, or Pillow.
+try:
+    import cv2
+except Exception as e:
+    cv2 = None
+    print("OpenCV se nenačetlo, jedu bez něj:", repr(e).splitlines()[0][:200], flush=True)
+
+
+def encode_jpg(bgr, quality):
+    if cv2 is not None:
+        return cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
+    img = np.ascontiguousarray(bgr[:, :, :3])
+    try:
+        import simplejpeg
+        return simplejpeg.encode_jpeg(img, quality=quality, colorspace="BGR")
+    except ImportError:
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.fromarray(np.ascontiguousarray(img[:, :, ::-1])).save(buf, "JPEG", quality=quality)
+        return buf.getvalue()
+
+
+def polygon_area(pts):
+    """Shoelace area of a polygon given as [[x, y], ...]."""
+    n = len(pts)
+    return abs(sum(pts[i][0] * pts[(i + 1) % n][1] - pts[(i + 1) % n][0] * pts[i][1]
+                   for i in range(n))) / 2
+
+
+def polygon_mask(h, w, poly):
+    """True inside the polygon (even-odd rule), as a boolean array."""
+    if cv2 is not None:
+        inside = np.zeros((h, w), np.uint8)
+        cv2.fillPoly(inside, [np.int32(poly)], 1)
+        return inside > 0
+    # row by row: where the row crosses the outline, fill between pairs of
+    # crossings (a full-size grid of coordinates would not fit a Pi 3B+ for a still)
+    inside = np.zeros((h, w), bool)
+    n = len(poly)
+    edges = [(poly[i], poly[(i + 1) % n]) for i in range(n) if poly[i][1] != poly[(i + 1) % n][1]]
+    for row in range(h):
+        y = row + 0.5
+        xs = sorted(x1 + (y - y1) * (x2 - x1) / (y2 - y1)
+                    for (x1, y1), (x2, y2) in edges if min(y1, y2) <= y < max(y1, y2))
+        for xa, xb in zip(xs[0::2], xs[1::2]):
+            a, b = max(0, int(round(xa))), min(w, int(round(xb)))
+            if b > a:
+                inside[row, a:b] = True
+    return inside
+
 
 HERE = Path(__file__).resolve().parent
 APP_DIR = HERE.parent          # the icons live one level up, as in the repo
@@ -288,7 +342,7 @@ class Station:
             self.crop_path.unlink(missing_ok=True)
             return
         pts = [[min(1.0, max(0.0, float(x))), min(1.0, max(0.0, float(y)))] for x, y in c["points"]]
-        if len(pts) < 3 or cv2.contourArea(np.float32(pts)) < 0.01:
+        if len(pts) < 3 or polygon_area(pts) < 0.01:
             raise ValueError("výřez je moc malý")
         self.crop = pts
         self.crop_path.write_text(json.dumps({"points": pts}))
@@ -309,17 +363,26 @@ class Station:
         x0, y0, x1, y1 = self.crop_box()
         X0, Y0, X1, Y1 = round(x0 * w), round(y0 * h), round(x1 * w), round(y1 * h)
         out = img[Y0:Y1, X0:X1].copy()
-        poly = np.int32([[p[0] * w - X0, p[1] * h - Y0] for p in self.crop])
-        inside = np.zeros(out.shape[:2], np.uint8)
-        cv2.fillPoly(inside, [poly], 255)
-        out[inside == 0] = cv2.mean(out, mask=inside)[:3]
+        # the mask is the same for every live frame, so it is made once per size
+        # (live view and photo run in different threads, hence one per key)
+        key = (out.shape[:2], tuple(map(tuple, self.crop)))
+        masks = self.__dict__.setdefault("_masks", {})
+        inside = masks.get(key)
+        if inside is None:
+            poly = [[round(p[0] * w) - X0, round(p[1] * h) - Y0] for p in self.crop]
+            inside = polygon_mask(out.shape[0], out.shape[1], poly)
+            if len(masks) > 4:
+                masks.clear()
+            masks[key] = inside
+        if inside.any():
+            out[~inside] = out[inside].mean(axis=0).astype(out.dtype)
         return out
 
     def full_frame(self):
         """One uncropped live frame, for drawing the crop on."""
         with self.cam_lock:
             bgr = self.camera.preview_bgr()
-        return cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
+        return encode_jpg(bgr, 80)
 
     def _preview_loop(self):
         """Encodes live-view frames, but only while someone is watching —
@@ -332,9 +395,9 @@ class Station:
             try:
                 with self.cam_lock:
                     bgr = self.camera.preview_bgr()
-                ok, jpg = cv2.imencode(".jpg", self.cropped(bgr), [cv2.IMWRITE_JPEG_QUALITY, 75])
+                jpg = encode_jpg(self.cropped(bgr), 75)
                 with self.frame_cv:
-                    self.frame = jpg.tobytes()
+                    self.frame = jpg
                     self.seq += 1
                     self.frame_cv.notify_all()
             except Exception as e:
@@ -356,8 +419,7 @@ class Station:
             side = side / max(x1 - x0, y1 - y0)
         with self.cam_lock:
             bgr = self.cropped(self.camera.still_bgr(round(side)))
-        ok, jpg = cv2.imencode(".jpg", bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])
-        body = jpg.tobytes()
+        body = encode_jpg(bgr, 92)
         # the last photo stays on the box, to be fetched when a count needs looking into
         (self.data_dir / "posledni.jpg").write_bytes(body)
         print(f"foto {bgr.shape[1]}x{bgr.shape[0]} za {time.time() - t0:.1f} s", flush=True)

@@ -8,8 +8,13 @@ DATA="$HOME/htz-data"
 PORT=8080
 
 echo "== 1/5 Instaluji knihovny (kamera, OpenCV, sdílení složky) =="
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-picamera2 python3-opencv python3-numpy v4l-utils samba
+if command -v apt-get >/dev/null; then
+  sudo apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-picamera2 python3-opencv python3-numpy v4l-utils samba
+else
+  # a broken system update once took apt itself away; the rest still has to run
+  echo "apt-get chybí — knihovny přeskakuji (systém je poškozený, viz NAVOD.md)"
+fi
 
 echo "== 2/5 Složka na měření: $DATA =="
 mkdir -p "$DATA"
