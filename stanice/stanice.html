@@ -1700,11 +1700,15 @@ function spread() {
 
 /** How many photos this sample needs: none more once one is spread well
  *  enough, else the crop's default, plus one more when the first two are both
- *  crowded or do not agree. Never more than three. */
+ *  crowded or do not agree. Never more than three — except for a crop with its
+ *  own threshold (freeDone), which asks again until a photo meets it, up to
+ *  MAX_SHOTS; "Uložit bez další fotky" ends it any time. */
+const MAX_SHOTS = 6;
 function needed() {
-  const want = CROPS[crop].photos || 1;
-  if (shots.length && shots[bestShot()].free >= (CROPS[crop].freeDone || FREE_DONE)) return shots.length;
+  const c = CROPS[crop], want = c.photos || 1;
+  if (shots.length && shots[bestShot()].free >= (c.freeDone || FREE_DONE)) return shots.length;
   if (want < 2 || shots.length < 2) return want;
+  if (c.freeDone) return Math.min(shots.length + 1, MAX_SHOTS);
   const b = bestShot();
   return (shots[b].free < FREE_MIN || spread() > SPREAD_MAX) ? 3 : 2;
 }
@@ -1771,7 +1775,11 @@ function renderShots() {
     document.getElementById("next-label").textContent =
       shots.length ? "📷 Vyfotit " + k + ". fotku" : "📷 Vyfotit znovu";
     let why = "";
-    if (shots.length === 1) {
+    const fd = CROPS[crop].freeDone;
+    if (fd && shots.length >= 2) {
+      why = "Volně leží nejvýš <b>" + Math.round(shots[bestShot()].free * 100) + " %</b> zrn, " +
+            "potřeba je aspoň " + Math.round(fd * 100) + " %. <b>Protřes misku, rozhrň zrna víc</b> a vyfoť další fotku.";
+    } else if (shots.length === 1) {
       why = "<b>Protřes misku</b>, zrna znovu rozhrň po celém dně a vyfoť ještě jednou. " +
             "Výsledek se vezme z fotky, na které leží víc zrn volně.";
     } else if (shots.length === 2) {
