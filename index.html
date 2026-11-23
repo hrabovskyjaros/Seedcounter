@@ -889,7 +889,7 @@ const CROPS = {
   barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
-  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000, dark: true },
+  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000, dark: true, areaRound: 0.3, photos: 2, freeDone: 0.55 },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true },
   maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
@@ -1458,7 +1458,9 @@ const AREA_ROUND = 0.35;      // 1.65 grains of area still counts as one
 // the shape already splits them reliably, so area only adds a seed from 1.8:
 // at 1.65 a big bean touching a small one came out as three, on three photos.
 const AREA_ROUND_SEED = 0.2;
-// opts.areaRound overrides both for one crop.
+// opts.areaRound overrides both for one crop. Sunflower uses 0.3: on five
+// photos of trays of 518 and 438 seeds 0.35 read 0 to 9 high, 0.3 within 5
+// (except a husky tray, 17 high either way).
 
 /**
  * Do two candidate centres belong to the same grain?
@@ -1676,7 +1678,8 @@ let shots = [], cur = -1;
 const FREE_MIN = 0.2;      // below this share of free grains a photo counts high
 const SPREAD_MAX = 0.04;   // two photos of one sample further apart than this disagree
 // A photo this well spread is trusted on its own: every checked photo above
-// 40 % free was within one grain of the hand count.
+// 40 % free was within one grain of the hand count. A crop can ask for more
+// (freeDone): sunflower counted right from 55 % free.
 const FREE_DONE = 0.5;
 
 function shotCount(s) { return s.marks.reduce((a, m) => a + m.n, 0); }
@@ -1698,7 +1701,7 @@ function spread() {
  *  crowded or do not agree. Never more than three. */
 function needed() {
   const want = CROPS[crop].photos || 1;
-  if (shots.length && shots[bestShot()].free >= FREE_DONE) return shots.length;
+  if (shots.length && shots[bestShot()].free >= (CROPS[crop].freeDone || FREE_DONE)) return shots.length;
   if (want < 2 || shots.length < 2) return want;
   const b = bestShot();
   return (shots[b].free < FREE_MIN || spread() > SPREAD_MAX) ? 3 : 2;
