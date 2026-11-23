@@ -2605,6 +2605,18 @@ body.station .actbar .in{ flex-direction:column-reverse; }
 body.station .actbar .btn{ text-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
 body.station .actbar .btn.glass-save{ flex:none; min-height:72px; background:var(--accent); color:var(--accent-ink); border-color:transparent; }
 body.station .actbar .btn.glass-cancel{ flex:none; background:var(--panel); color:var(--danger); border:1px solid var(--line-strong); }
+/* while the sample still wants another photo, its buttons stand where Save and
+   Cancel stand once it is done — not below the photo, out of sight */
+#side-act{
+  position:fixed; right:32px; bottom:24px; width:220px; z-index:40;
+  display:flex; flex-direction:column; gap:10px;
+}
+#side-act > div[style], #next-box > div[style]{ display:none; }
+#side-act #next-box:not(.hide){ display:flex; flex-direction:column; gap:10px; }
+#side-act .note{ margin:0; box-shadow:var(--shadow); background:var(--panel); }
+#side-act #lbl-next{ min-height:72px; }
+#side-act #btn-save, #side-act #btn-cancel{ background:var(--panel); border:1px solid var(--line-strong); }
+#side-act #btn-cancel{ color:var(--danger); }
 
 /* settings behind the gear in the header */
 .gear-btn{
@@ -3029,6 +3041,13 @@ body.station #crops{ display:none !important; }
     ev.preventDefault();
     shootFromHome();
   });
+
+  // the next-photo buttons into the right-hand column (see #side-act)
+  const act = document.createElement("div");
+  act.id = "side-act";
+  const saveBtn = document.getElementById("btn-save");
+  act.append(document.getElementById("next-box"), saveBtn, document.getElementById("btn-cancel"));
+  document.getElementById("s-result").append(act);
 
   show("s-home");
   document.getElementById("in-name").focus();
