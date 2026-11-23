@@ -182,6 +182,8 @@ button, label.btn, .crop, .kill, canvas{
   line-height:1.05;
 }
 .readout .num.pending{color:var(--muted); font-weight:400;}
+.readout .split{font-size:13px; color:var(--muted); font-family:ui-monospace, Menlo, Consolas, monospace;}
+.readout .split:empty{display:none;}
 .readout .unit{
   font-size:13px;
   color:var(--muted);
@@ -707,6 +709,7 @@ body.bar-up .wrap{padding-bottom:calc(96px + env(safe-area-inset-bottom));}
       <div class="cell">
         <div class="label">Počet zrn</div>
         <div class="num" id="out-count">0</div>
+        <div class="split" id="out-split"></div>
       </div>
       <div class="cell htz">
         <div class="label">HTZ</div>
@@ -879,8 +882,8 @@ function persist() {
    2 mm seeds, and which HTZ result is physically believable.
    ═══════════════════════════════════════════════════════════ */
 const CROPS = {
-  wheat:  { name: "Pšenice", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.75, halves: 1.6, maxHalves: 10 },
-  triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 10, photos: 2, freeDone: 0.68 },
+  wheat:  { name: "Pšenice", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400, photos: 2, freeDone: 0.75, halves: 1.6, maxHalves: 5 },
+  triticale: { name: "Tritikale", scoop: "1 polévkovou lžíci", approx: "~12 g", area: "A4", lo: 25, hi: 70, side: 2400, halves: 2, maxHalves: 5, photos: 2, freeDone: 0.68 },
   rye:    { name: "Žito",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400, sliver: 5, areaRound: 0, photos: 2, freeDone: 0.68 },
   barley: { name: "Ječmen", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   oats:   { name: "Oves",     scoop: "1 polévkovou lžíci",  approx: "~8 g",   area: "A4", lo: 15,  hi: 55,  side: 2400 },
@@ -1725,9 +1728,20 @@ function needed() {
   return (shots[b].free < FREE_MIN || spread() > SPREAD_MAX) ? 3 : 2;
 }
 
+/* Halves count half a grain each, but what is saved and used for the HTZ is a
+   whole number: 431 grains and 9 halves make 435 (the half left over drops). */
 function usedCount() {
   const b = bestShot();
-  return b < 0 ? 0 : shotCount(shots[b]);
+  return b < 0 ? 0 : Math.floor(shotCount(shots[b]) + 1e-9);
+}
+
+function countSplit() {
+  const b = bestShot();
+  if (b < 0) return "";
+  const h = shots[b].marks.filter(m => m.kind === "half").length;
+  if (!h) return "";
+  const whole = shots[b].marks.filter(m => m.kind !== "half").length;
+  return whole + " + " + fmtN(h / 2) + " (" + h + " půlek)";
 }
 
 function showShot(i) {
@@ -1760,7 +1774,7 @@ function renderShots() {
       const who = document.createElement("div");
       who.className = "who";
       const t = document.createElement("b");
-      t.textContent = "Fotka " + (i + 1) + " · " + fmtN(shotCount(s)) + " zrn";
+      t.textContent = "Fotka " + (i + 1) + " · " + Math.floor(shotCount(s) + 1e-9) + " zrn";
       const sub = document.createElement("span");
       sub.textContent = "volně " + Math.round(s.free * 100) + " % zrn" + (i === cur ? " · zobrazená" : "");
       who.append(t, sub);
@@ -1870,6 +1884,7 @@ function draw() {
     ctx.stroke();
   }
   document.getElementById("out-count").textContent = fmtN(shots.length ? usedCount() : total());
+  document.getElementById("out-split").textContent = shots.length ? countSplit() : "";
   document.getElementById("full-count").textContent = fmtN(total());
   recalcHtz();
   if (shots.length) renderShots();
@@ -2410,7 +2425,7 @@ document.getElementById("btn-save").addEventListener("click", () => {
     name: name || "Vzorek " + (saved.length + 1),
     crop: CROPS[crop].name,
     count: usedCount(),
-    shots: shots.map(shotCount),
+    shots: shots.map(s => Math.floor(shotCount(s) + 1e-9)),
     weight: wgt,
     htz: htz,
     when: d.toLocaleDateString("cs-CZ") + " " + d.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })
