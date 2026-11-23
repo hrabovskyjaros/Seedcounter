@@ -889,7 +889,7 @@ const CROPS = {
   barley: { name: "Ječmen ozimý", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   barley_spring: { name: "Ječmen jarní", scoop: "1 polévkovou lžíci", approx: "~10 g", area: "A4", lo: 25, hi: 65, side: 2400 },
   rape:   { name: "Řepka",    scoop: "půl čajové lžičky",   approx: "~1,5 g", area: "A5", lo: 2.5, hi: 9,   side: 2600 },
-  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000, areaRound: -0.4 },
+  sunflower: { name: "Slunečnice", scoop: "2 polévkové lžíce", approx: "~15 g", area: "A4", lo: 30, hi: 130, side: 2000, dark: true },
   soy:    { name: "Sója",     scoop: "3 polévkové lžíce",   approx: "~35 g",  area: "A4", lo: 80,  hi: 280, side: 2000, round: true },
   maize:  { name: "Kukuřice", scoop: "4 polévkové lžíce",   approx: "~50 g",  area: "A4", lo: 150, hi: 450, side: 2000, photos: 2 },
   other:  { name: "Jiná",     scoop: "tolik, aby vyšlo 200–300 zrn", approx: "", area: "A4", lo: 0, hi: 0, side: 2400 }
@@ -897,7 +897,7 @@ const CROPS = {
 // what the counter needs to know about the crop (see toMarks)
 function cropOpts() {
   const c = CROPS[crop];
-  return { round: !!c.round, areaRound: c.areaRound };
+  return { round: !!c.round, dark: !!c.dark, areaRound: c.areaRound };
 }
 const CROP_KEY = "htz-pocitadlo-crop";
 let crop = localStorage.getItem(CROP_KEY) || "wheat";
@@ -1243,7 +1243,14 @@ function outsideTray(mask, label, nBlobs, w, h) {
  * grain too, so they no longer punch holes into it.
  * Returns null when the tray is not blue enough for this to mean anything.
  */
-function blueField(px, w, h) {
+// opts.dark: dark seeds (sunflower). Their black rim is barely less blue than
+// the tray, so by colour alone a lone seed lost its rim and came out small,
+// while in a clump the rims between seeds stayed — area then took clumps for
+// more seeds than they held. Being much darker than the tray marks a seed too.
+// Two trays of 518 seeds read 552 and 529 by colour alone, 519 and 521 with it.
+const DARK_MARGIN = 25;   // this much darker than the tray floor before it counts
+const DARK_GAIN = 1.2;    // darkness against the blue-distance scale below
+function blueField(px, w, h, dark) {
   const n = w * h, ratio = new Float32Array(n);
   const hist = new Uint32Array(512);
   for (let i = 0, p = 0; i < n; i++, p += 4) {
@@ -1256,10 +1263,20 @@ function blueField(px, w, h) {
   for (let k = 0; k < 512; k++) { acc += hist[k]; if (acc > n / 2) { tray = k / 255 - 1; break; } }
   if (tray < 0.08) return null;
 
+  let trayL = 0;
+  if (dark) {
+    const lh = new Uint32Array(256);
+    for (let p = 0; p < n * 4; p += 4) lh[((px[p] + px[p + 1] + px[p + 2]) / 3) | 0]++;
+    for (let k = 0, acc = 0; k < 256; k++) { acc += lh[k]; if (acc > n / 2) { trayL = k; break; } }
+  }
   const dist = new Float32Array(n);
   let maxD = 0;
   for (let i = 0; i < n; i++) {
-    const d = Math.max(0, tray - ratio[i]) * 300;
+    let d = Math.max(0, tray - ratio[i]) * 300;
+    if (dark) {
+      const L = (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3;
+      d = Math.max(d, (trayL - L - DARK_MARGIN) * DARK_GAIN);
+    }
     dist[i] = d;
     if (d > maxD) maxD = d;
   }
@@ -1342,11 +1359,11 @@ function distanceField(px, f, w, h) {
  * On a blue tray every pixel is scored by how much less blue it is than the
  * tray; on any other background, by colour distance from the local background.
  */
-function segment(imgData, w, h) {
+function segment(imgData, w, h, opts = {}) {
   const px = imgData.data;
   if (typeof PROGRESS === "function") PROGRESS("Odečítám barvu misky…");
 
-  const field = blueField(px, w, h) || distanceField(px, backgroundField(px, w, h), w, h);
+  const field = blueField(px, w, h, !!opts.dark) || distanceField(px, backgroundField(px, w, h), w, h);
   const { dist, maxD } = field;
   if (maxD < 24) return { fail: "contrast" };
 
@@ -1426,11 +1443,7 @@ const AREA_ROUND = 0.35;      // 1.65 grains of area still counts as one
 // the shape already splits them reliably, so area only adds a seed from 1.8:
 // at 1.65 a big bean touching a small one came out as three, on three photos.
 const AREA_ROUND_SEED = 0.2;
-// opts.areaRound overrides both for one crop. Sunflower: a lone dark seed
-// loses its black rim to the tray, so the area of one seed reads small, while
-// in a clump the rims between seeds stay in — clumps then looked like extra
-// seeds: 556 on a tray of 518 in the browser, 519 with -0.4 (-0.35 to -0.45
-// all within 3).
+// opts.areaRound overrides both for one crop.
 
 /**
  * Do two candidate centres belong to the same grain?
@@ -1605,7 +1618,7 @@ function toMarks(seg, opts = {}) {
 if (typeof document === "undefined") {
   self.onmessage = function (e) {
     PROGRESS = msg => self.postMessage({ progress: msg });
-    const seg = segment({ data: new Uint8ClampedArray(e.data.buf) }, e.data.w, e.data.h);
+    const seg = segment({ data: new Uint8ClampedArray(e.data.buf) }, e.data.w, e.data.h, e.data.opts);
     if (seg.fail) { self.postMessage({ fail: seg.fail }); return; }
     const res = toMarks(seg, e.data.opts);
     // The mask goes back too, so the operator (and whoever is debugging a bad
@@ -1949,7 +1962,7 @@ function countGrains(imgData, w, h) {
   const wk = ensureWorker();
   if (!wk) {
     return new Promise(res => setTimeout(() => {
-      const seg = segment(imgData, w, h);
+      const seg = segment(imgData, w, h, cropOpts());
       if (seg.fail) { res({ fail: seg.fail }); return; }
       const r = toMarks(seg, cropOpts());
       res({ marks: r.marks, clustered: r.clustered, border: r.border, r0: r.r0,
